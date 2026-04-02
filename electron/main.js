@@ -85,7 +85,28 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS purchasing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      component_name TEXT NOT NULL,
+      component_code TEXT,
+      quantity INTEGER DEFAULT 0,
+      unit TEXT DEFAULT 'pcs',
+      pic TEXT,
+      contract_no TEXT,
+      payment_status TEXT DEFAULT 'Chưa thanh toán',
+      order_date DATETIME,
+      expected_date DATETIME,
+      actual_quantity INTEGER DEFAULT 0,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  // Upgrade existing orders table
+  try { db.exec('ALTER TABLE orders ADD COLUMN delivered_quantity INTEGER DEFAULT 0'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN vat_rate REAL DEFAULT 0.08'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN vat_amount REAL DEFAULT 0'); } catch (e) {}
 
   // Create default admin if not exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
@@ -132,7 +153,7 @@ ipcMain.handle('auth:login', (_, username, password) => {
   if (!user) return { success: false, message: 'Tài khoản không tồn tại' };
   const valid = bcrypt.compareSync(password, user.password);
   if (!valid) return { success: false, message: 'Sai mật khẩu' };
-  const { password: _, ...safeUser } = user;
+  const { password: pwd, ...safeUser } = user;
   return { success: true, user: safeUser };
 });
 
@@ -248,8 +269,8 @@ ipcMain.handle('orders:getAll', () => {
 ipcMain.handle('orders:create', (_, data) => {
   try {
     const result = db.prepare(
-      'INSERT INTO orders (order_code, customer_name, product_id, quantity, total_price, status, delivery_date, assigned_to, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.total_price, data.status, data.delivery_date, data.assigned_to, data.note);
+      'INSERT INTO orders (order_code, customer_name, product_id, quantity, total_price, status, delivery_date, assigned_to, note, delivered_quantity, vat_rate, vat_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.total_price, data.status, data.delivery_date, data.assigned_to, data.note, data.delivered_quantity || 0, data.vat_rate || 0.08, data.vat_amount || 0);
     return { success: true, id: result.lastInsertRowid };
   } catch (e) {
     return { success: false, message: e.message };
@@ -258,8 +279,8 @@ ipcMain.handle('orders:create', (_, data) => {
 
 ipcMain.handle('orders:update', (_, id, data) => {
   db.prepare(
-    'UPDATE orders SET order_code = ?, customer_name = ?, product_id = ?, quantity = ?, total_price = ?, status = ?, delivery_date = ?, assigned_to = ?, note = ? WHERE id = ?'
-  ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.total_price, data.status, data.delivery_date, data.assigned_to, data.note, id);
+    'UPDATE orders SET order_code = ?, customer_name = ?, product_id = ?, quantity = ?, total_price = ?, status = ?, delivery_date = ?, assigned_to = ?, note = ?, delivered_quantity = ?, vat_rate = ?, vat_amount = ? WHERE id = ?'
+  ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.total_price, data.status, data.delivery_date, data.assigned_to, data.note, data.delivered_quantity, data.vat_rate, data.vat_amount, id);
   return { success: true };
 });
 
@@ -277,6 +298,43 @@ ipcMain.handle('audit:log', (_, data) => {
   db.prepare(
     'INSERT INTO audit_logs (user_id, username, action, table_name, record_id, old_values, new_values) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(data.user_id, data.username, data.action, data.table_name, data.record_id, data.old_values, data.new_values);
+  return { success: true };
+});
+
+// PURCHASING
+ipcMain.handle('purchasing:getAll', () => {
+  return db.prepare('SELECT * FROM purchasing ORDER BY id DESC').all();
+});
+
+ipcMain.handle('purchasing:createMultiple', (_, items) => {
+  const insert = db.prepare(
+    `INSERT INTO purchasing (component_name, component_code, quantity, unit, order_date, expected_date, pic) 
+     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, date('now', '+7 days'), 'Phòng Thu Mua')`
+  );
+  
+  const insertMany = db.transaction((items) => {
+    for (const item of items) {
+      insert.run(item.component_name, item.component_code, item.shortage, item.unit);
+    }
+  });
+
+  try {
+    insertMany(items);
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+});
+
+ipcMain.handle('purchasing:update', (_, id, data) => {
+  db.prepare(
+    'UPDATE purchasing SET pic = ?, contract_no = ?, payment_status = ?, expected_date = ?, actual_quantity = ?, note = ? WHERE id = ?'
+  ).run(data.pic, data.contract_no, data.payment_status, data.expected_date, data.actual_quantity, data.note, id);
+  return { success: true };
+});
+
+ipcMain.handle('purchasing:delete', (_, id) => {
+  db.prepare('DELETE FROM purchasing WHERE id = ?').run(id);
   return { success: true };
 });
 
@@ -309,6 +367,88 @@ ipcMain.handle('dashboard:stats', () => {
   const totalOrders = db.prepare('SELECT COUNT(*) as count FROM orders').get().count;
   const pendingOrders = db.prepare("SELECT COUNT(*) as count FROM orders WHERE status = 'pending'").get().count;
   return { totalProducts, totalBomItems, totalInventory, lowStock, totalOrders, pendingOrders };
+});
+
+// BOM COPY - Copy BOM from one product to another
+ipcMain.handle('bom:copyFromProduct', (_, sourceProductId, targetProductId) => {
+  const sourceItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(sourceProductId);
+  if (sourceItems.length === 0) return { success: false, message: 'Sản phẩm nguồn không có BOM' };
+
+  const insert = db.prepare(
+    'INSERT INTO bom_items (product_id, component_name, component_code, quantity, unit, unit_price, vat_rate, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+
+  const copyAll = db.transaction(() => {
+    for (const item of sourceItems) {
+      insert.run(targetProductId, item.component_name, item.component_code, item.quantity, item.unit, item.unit_price, item.vat_rate, item.note);
+    }
+  });
+
+  try {
+    copyAll();
+    return { success: true, count: sourceItems.length };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+});
+
+// MRP - Material Requirement Planning
+ipcMain.handle('mrp:calculate', (_, planItems) => {
+  // planItems = [{ product_id, quantity }, ...]
+  // Step 1: Aggregate total material needs across all products in the plan
+  const materialNeeds = {};
+
+  for (const planItem of planItems) {
+    const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(planItem.product_id);
+    for (const bom of bomItems) {
+      const key = bom.component_code || bom.component_name;
+      if (!materialNeeds[key]) {
+        materialNeeds[key] = {
+          component_name: bom.component_name,
+          component_code: bom.component_code,
+          unit: bom.unit,
+          unit_price: bom.unit_price,
+          total_required: 0,
+          details: [],
+        };
+      }
+      const qty = bom.quantity * planItem.quantity;
+      materialNeeds[key].total_required += qty;
+      // Track which product needs how much
+      const product = db.prepare('SELECT name FROM products WHERE id = ?').get(planItem.product_id);
+      materialNeeds[key].details.push({
+        product_name: product ? product.name : `ID:${planItem.product_id}`,
+        bom_qty: bom.quantity,
+        plan_qty: planItem.quantity,
+        subtotal: qty,
+      });
+    }
+  }
+
+  // Step 2: Compare with inventory
+  const results = [];
+  for (const key of Object.keys(materialNeeds)) {
+    const need = materialNeeds[key];
+    let inStock = 0;
+    if (need.component_code) {
+      const inv = db.prepare('SELECT quantity FROM inventory WHERE component_code = ?').get(need.component_code);
+      if (inv) inStock = inv.quantity;
+    }
+    const shortage = Math.max(0, need.total_required - inStock);
+    results.push({
+      component_name: need.component_name,
+      component_code: need.component_code,
+      unit: need.unit,
+      unit_price: need.unit_price,
+      total_required: need.total_required,
+      in_stock: inStock,
+      shortage: shortage,
+      estimated_cost: shortage * (need.unit_price || 0),
+      details: need.details,
+    });
+  }
+
+  return results;
 });
 
 // APP LIFECYCLE

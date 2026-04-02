@@ -7,7 +7,7 @@ export default function Orders() {
   const [products, setProducts] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newOrder, setNewOrder] = useState({
-    order_code: '', customer_name: '', product_id: '', quantity: 1, total_price: 0, status: 'pending', delivery_date: '', assigned_to: '', note: ''
+    order_code: '', customer_name: '', product_id: '', quantity: 1, delivered_quantity: 0, total_price: 0, vat_rate: 0.08, status: 'pending', delivery_date: '', assigned_to: '', note: ''
   });
 
   useEffect(() => { loadOrders(); loadProducts(); }, []);
@@ -24,7 +24,7 @@ export default function Orders() {
         action: 'CREATE', table_name: 'orders', record_id: result.id,
         old_values: null, new_values: JSON.stringify(newOrder)
       });
-      setNewOrder({ order_code: '', customer_name: '', product_id: '', quantity: 1, total_price: 0, status: 'pending', delivery_date: '', assigned_to: '', note: '' });
+      setNewOrder({ order_code: '', customer_name: '', product_id: '', quantity: 1, delivered_quantity: 0, total_price: 0, vat_rate: 0.08, status: 'pending', delivery_date: '', assigned_to: '', note: '' });
       setShowAdd(false);
       loadOrders();
     }
@@ -62,11 +62,12 @@ export default function Orders() {
                 <th>Mã ĐH</th>
                 <th>Khách hàng</th>
                 <th>Sản phẩm</th>
-                <th>SL</th>
-                <th>Tổng tiền</th>
+                <th>Tổng SL</th>
+                <th>Đã giao</th>
+                <th>Còn lại</th>
+                <th>Thành tiền (VAT)</th>
                 <th>Trạng thái</th>
                 <th>Ngày giao</th>
-                <th>Phụ trách</th>
                 <th>Ghi chú</th>
                 {canDelete() && <th>Thao tác</th>}
               </tr>
@@ -77,11 +78,15 @@ export default function Orders() {
                   <td>{o.order_code}</td>
                   <td>{o.customer_name}</td>
                   <td>{o.product_name || '—'}</td>
-                  <td>{o.quantity}</td>
-                  <td className="text-right">{formatCurrency(o.total_price)}</td>
+                  <td><strong>{o.quantity}</strong></td>
+                  <td><strong style={{ color: '#16a34a' }}>{o.delivered_quantity || 0}</strong></td>
+                  <td><strong style={{ color: '#dc2626' }}>{Math.max(0, o.quantity - (o.delivered_quantity || 0))}</strong></td>
+                  <td className="text-right">
+                    {formatCurrency(o.total_price)}<br/>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>(VAT {((o.vat_rate || 0.08)*100)}%: {formatCurrency((o.total_price || 0) * (o.vat_rate || 0.08))})</span>
+                  </td>
                   <td><span className={`badge ${statusClass[o.status] || ''}`}>{statusLabel[o.status] || o.status}</span></td>
                   <td>{o.delivery_date || '—'}</td>
-                  <td>{o.assigned_to || '—'}</td>
                   <td>{o.note || '—'}</td>
                   {canDelete() && (
                     <td><button className="btn-icon btn-danger-icon" onClick={() => handleDelete(o.id)}>✕</button></td>
@@ -111,10 +116,13 @@ export default function Orders() {
                     {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
                   </select>
                 </div>
-                <div className="form-group"><label>Số lượng</label><input type="number" min="1" value={newOrder.quantity} onChange={(e) => setNewOrder({ ...newOrder, quantity: parseInt(e.target.value) })} /></div>
+                <div className="form-group"><label>Tổng số lượng</label><input type="number" min="1" value={newOrder.quantity} onChange={(e) => setNewOrder({ ...newOrder, quantity: parseInt(e.target.value) || 1 })} /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Tổng tiền</label><input type="number" min="0" value={newOrder.total_price} onChange={(e) => setNewOrder({ ...newOrder, total_price: parseFloat(e.target.value) })} /></div>
+                <div className="form-group"><label>Tổng Tiền (chưa VAT)</label><input type="number" min="0" value={newOrder.total_price} onChange={(e) => setNewOrder({ ...newOrder, total_price: parseFloat(e.target.value) || 0 })} /></div>
+                <div className="form-group"><label>Thuế VAT (%)</label><input type="number" step="0.01" min="0" value={newOrder.vat_rate} onChange={(e) => setNewOrder({ ...newOrder, vat_rate: parseFloat(e.target.value) || 0 })} /></div>
+              </div>
+              <div className="form-row">
                 <div className="form-group">
                   <label>Trạng thái</label>
                   <select value={newOrder.status} onChange={(e) => setNewOrder({ ...newOrder, status: e.target.value })}>

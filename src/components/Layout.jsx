@@ -6,12 +6,17 @@ import Inventory from '../pages/Inventory';
 import Orders from '../pages/Orders';
 import AuditLog from '../pages/AuditLog';
 import UserManagement from '../pages/UserManagement';
+import ProductionPlanning from '../pages/ProductionPlanning';
+
+import Purchasing from '../pages/Purchasing';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Tổng quan', icon: '📊' },
   { id: 'bom', label: 'BOM', icon: '📋' },
   { id: 'inventory', label: 'Kho', icon: '📦' },
+  { id: 'planning', label: 'Kế hoạch', icon: '⚙️' },
   { id: 'orders', label: 'Đơn hàng', icon: '🛒' },
+  { id: 'purchasing', label: 'Mua hàng', icon: '🛒' },
   { id: 'audit', label: 'Lịch sử', icon: '📝' },
   { id: 'users', label: 'Người dùng', icon: '👥', adminOnly: true },
 ];
@@ -30,6 +35,8 @@ export default function Layout() {
       case 'bom': return <BOMManagement />;
       case 'inventory': return <Inventory />;
       case 'orders': return <Orders />;
+      case 'planning': return <ProductionPlanning />;
+      case 'purchasing': return <Purchasing />;
       case 'audit': return <AuditLog />;
       case 'users': return <UserManagement />;
       default: return <Dashboard />;

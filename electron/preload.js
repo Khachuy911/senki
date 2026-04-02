@@ -42,4 +42,16 @@ contextBridge.exposeInMainWorld('api', {
 
   // Dashboard
   getDashboardStats: () => ipcRenderer.invoke('dashboard:stats'),
+
+  // BOM Copy
+  copyBomFromProduct: (sourceProductId, targetProductId) => ipcRenderer.invoke('bom:copyFromProduct', sourceProductId, targetProductId),
+
+  // MRP
+  calculateMRP: (planItems) => ipcRenderer.invoke('mrp:calculate', planItems),
+
+  // Purchasing
+  getPurchases: () => ipcRenderer.invoke('purchasing:getAll'),
+  createPurchases: (items) => ipcRenderer.invoke('purchasing:createMultiple', items),
+  updatePurchase: (id, data) => ipcRenderer.invoke('purchasing:update', id, data),
+  deletePurchase: (id) => ipcRenderer.invoke('purchasing:delete', id),
 });

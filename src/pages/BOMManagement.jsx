@@ -9,6 +9,10 @@ export default function BOMManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showAddBom, setShowAddBom] = useState(false);
+  const [showCopyBom, setShowCopyBom] = useState(false);
+  const [copySourceId, setCopySourceId] = useState('');
+  const [showEditBom, setShowEditBom] = useState(false);
+  const [editBom, setEditBom] = useState(null);
   const [newProduct, setNewProduct] = useState({ name: '', code: '', category: '' });
   const [newBom, setNewBom] = useState({
     component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: ''
@@ -86,6 +90,52 @@ export default function BOMManagement() {
       old_values: null, new_values: null
     });
     loadBom(selectedProduct.id);
+  };
+
+  const openEditBom = (item) => {
+    setEditBom({ ...item });
+    setShowEditBom(true);
+  };
+
+  const handleEditBom = async (e) => {
+    e.preventDefault();
+    const oldItem = bomItems.find(b => b.id === editBom.id);
+    await window.api.updateBomItem(editBom.id, {
+      component_name: editBom.component_name,
+      component_code: editBom.component_code,
+      quantity: editBom.quantity,
+      unit: editBom.unit,
+      unit_price: editBom.unit_price,
+      vat_rate: editBom.vat_rate,
+      note: editBom.note,
+    });
+    await window.api.logAudit({
+      user_id: user.id, username: user.username,
+      action: 'UPDATE', table_name: 'bom_items', record_id: editBom.id,
+      old_values: JSON.stringify(oldItem),
+      new_values: JSON.stringify(editBom)
+    });
+    setShowEditBom(false);
+    setEditBom(null);
+    loadBom(selectedProduct.id);
+  };
+
+  const handleCopyBom = async () => {
+    if (!copySourceId) return;
+    const result = await window.api.copyBomFromProduct(parseInt(copySourceId), selectedProduct.id);
+    if (result.success) {
+      await window.api.logAudit({
+        user_id: user.id, username: user.username,
+        action: 'CREATE', table_name: 'bom_items', record_id: selectedProduct.id,
+        old_values: null, new_values: JSON.stringify({ action: 'COPY_BOM', source_product_id: copySourceId, count: result.count })
+      });
+      alert(`Đã sao chép ${result.count} linh kiện thành công!`);
+      setCopySourceId('');
+      setShowCopyBom(false);
+      loadBom(selectedProduct.id);
+    } else {
+      alert(result.message || 'Lỗi khi sao chép BOM');
+    }
   };
 
   const handleImportExcel = async () => {
@@ -176,7 +226,10 @@ export default function BOMManagement() {
             <div className="panel-header">
               <h3>{selectedProduct ? `BOM: ${selectedProduct.name}` : 'Chọn sản phẩm để xem BOM'}</h3>
               {selectedProduct && canEdit() && (
-                <button className="btn-primary btn-sm" onClick={() => setShowAddBom(true)}>+ Thêm linh kiện</button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn-secondary btn-sm" onClick={() => setShowCopyBom(true)}>📋 Sao chép BOM từ...</button>
+                  <button className="btn-primary btn-sm" onClick={() => setShowAddBom(true)}>+ Thêm linh kiện</button>
+                </div>
               )}
             </div>
             {selectedProduct ? (
@@ -193,7 +246,7 @@ export default function BOMManagement() {
                       <th>VAT</th>
                       <th>Thành tiền</th>
                       <th>Ghi chú</th>
-                      {canDelete() && <th>Thao tác</th>}
+                      {canEdit() && <th>Thao tác</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -210,9 +263,12 @@ export default function BOMManagement() {
                           <td>{(item.vat_rate * 100).toFixed(0)}%</td>
                           <td className="text-right">{formatCurrency(subtotal)}</td>
                           <td>{item.note}</td>
-                          {canDelete() && (
+                          {canEdit() && (
                             <td>
-                              <button className="btn-icon btn-danger-icon" onClick={() => handleDeleteBom(item.id)}>✕</button>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button className="btn-icon btn-edit-icon" onClick={() => openEditBom(item)} title="Sửa">✎</button>
+                                {canDelete() && <button className="btn-icon btn-danger-icon" onClick={() => handleDeleteBom(item.id)} title="Xóa">✕</button>}
+                              </div>
                             </td>
                           )}
                         </tr>
@@ -301,6 +357,81 @@ export default function BOMManagement() {
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowAddBom(false)}>Hủy</button>
                 <button type="submit" className="btn-primary">Lưu</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Copy BOM Modal */}
+      {showCopyBom && (
+        <div className="modal-overlay" onClick={() => setShowCopyBom(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Sao chép BOM cho: {selectedProduct.name}</h3>
+            <p style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>
+              Chọn sản phẩm nguồn để sao chép toàn bộ danh sách linh kiện sang <strong>{selectedProduct.name}</strong>.
+              Sau khi sao chép, bạn có thể chỉnh sửa số lượng từng linh kiện.
+            </p>
+            <div className="form-group">
+              <label>Sao chép BOM từ sản phẩm:</label>
+              <select value={copySourceId} onChange={(e) => setCopySourceId(e.target.value)}>
+                <option value="">-- Chọn sản phẩm nguồn --</option>
+                {products.filter(p => p.id !== selectedProduct.id).map(p => (
+                  <option key={p.id} value={p.id}>{p.name} {p.code ? `(${p.code})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn-secondary" onClick={() => setShowCopyBom(false)}>Hủy</button>
+              <button type="button" className="btn-primary" onClick={handleCopyBom} disabled={!copySourceId}>Sao chép</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit BOM Item Modal */}
+      {showEditBom && editBom && (
+        <div className="modal-overlay" onClick={() => setShowEditBom(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Sửa linh kiện</h3>
+            <form onSubmit={handleEditBom}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Tên linh kiện</label>
+                  <input required value={editBom.component_name} onChange={(e) => setEditBom({ ...editBom, component_name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Mã linh kiện</label>
+                  <input value={editBom.component_code || ''} onChange={(e) => setEditBom({ ...editBom, component_code: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Số lượng</label>
+                  <input type="number" min="1" value={editBom.quantity} onChange={(e) => setEditBom({ ...editBom, quantity: parseInt(e.target.value) || 1 })} />
+                </div>
+                <div className="form-group">
+                  <label>Đơn vị</label>
+                  <input value={editBom.unit} onChange={(e) => setEditBom({ ...editBom, unit: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Đơn giá</label>
+                  <input type="number" min="0" value={editBom.unit_price} onChange={(e) => setEditBom({ ...editBom, unit_price: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="form-group">
+                  <label>VAT (tỷ lệ, VD: 0.08 = 8%)</label>
+                  <input type="number" min="0" max="1" step="0.01" value={editBom.vat_rate} onChange={(e) => setEditBom({ ...editBom, vat_rate: parseFloat(e.target.value) || 0 })} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Ghi chú</label>
+                <input value={editBom.note || ''} onChange={(e) => setEditBom({ ...editBom, note: e.target.value })} />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowEditBom(false)}>Hủy</button>
+                <button type="submit" className="btn-primary">Lưu thay đổi</button>
               </div>
             </form>
           </div>
