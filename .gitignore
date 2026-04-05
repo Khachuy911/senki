@@ -5,3 +5,9 @@ release/
 *.exe
 *.dmg
 .env
+.claude
+.opencode
+docs
+plans
+.agent
+*.md

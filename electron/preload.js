@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Excel
   importExcel: () => ipcRenderer.invoke('excel:import'),
+  exportOrders: () => ipcRenderer.invoke('excel:exportOrders'),
 
   // Dashboard
   getDashboardStats: () => ipcRenderer.invoke('dashboard:stats'),

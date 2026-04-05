@@ -43,6 +43,16 @@ function initDatabase() {
       unit_price REAL DEFAULT 0,
       vat_rate REAL DEFAULT 0.08,
       note TEXT,
+      -- New fields for purchasing tracking
+      material TEXT,
+      specification TEXT,
+      color TEXT,
+      identifying_features TEXT,
+      pic_standard TEXT,
+      contract_no TEXT,
+      payment_status TEXT,
+      order_date TEXT,
+      needed_date TEXT,
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
     );
 
@@ -64,6 +74,7 @@ function initDatabase() {
       customer_name TEXT,
       product_id INTEGER,
       quantity INTEGER DEFAULT 1,
+      unit_price REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
       order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -104,9 +115,28 @@ function initDatabase() {
   `);
 
   // Upgrade existing orders table
+  try { db.exec('ALTER TABLE orders ADD COLUMN unit_price REAL DEFAULT 0'); } catch (e) {}
   try { db.exec('ALTER TABLE orders ADD COLUMN delivered_quantity INTEGER DEFAULT 0'); } catch (e) {}
   try { db.exec('ALTER TABLE orders ADD COLUMN vat_rate REAL DEFAULT 0.08'); } catch (e) {}
   try { db.exec('ALTER TABLE orders ADD COLUMN vat_amount REAL DEFAULT 0'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN order_date DATETIME'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN payment_deadline DATETIME'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN customer_phone TEXT'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN customer_email TEXT'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN customer_address TEXT'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN shipping_fee REAL DEFAULT 0'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0'); } catch (e) {}
+
+  // Upgrade existing bom_items table
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN material TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN specification TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN color TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN identifying_features TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN pic_standard TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN contract_no TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN payment_status TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN order_date TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN needed_date TEXT"); } catch (e) {}
 
   // Create default admin if not exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
@@ -211,15 +241,15 @@ ipcMain.handle('bom:getByProduct', (_, productId) => {
 
 ipcMain.handle('bom:create', (_, data) => {
   const result = db.prepare(
-    'INSERT INTO bom_items (product_id, component_name, component_code, quantity, unit, unit_price, vat_rate, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(data.product_id, data.component_name, data.component_code, data.quantity, data.unit, data.unit_price, data.vat_rate, data.note);
+    'INSERT INTO bom_items (product_id, component_name, component_code, quantity, unit, unit_price, vat_rate, note, material, specification, color, identifying_features, pic_standard, contract_no, payment_status, order_date, needed_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(data.product_id, data.component_name, data.component_code, data.quantity, data.unit, data.unit_price, data.vat_rate, data.note, data.material || '', data.specification || '', data.color || '', data.identifying_features || '', data.pic_standard || '', data.contract_no || '', data.payment_status || '', data.order_date || '', data.needed_date || '');
   return { success: true, id: result.lastInsertRowid };
 });
 
 ipcMain.handle('bom:update', (_, id, data) => {
   db.prepare(
-    'UPDATE bom_items SET component_name = ?, component_code = ?, quantity = ?, unit = ?, unit_price = ?, vat_rate = ?, note = ? WHERE id = ?'
-  ).run(data.component_name, data.component_code, data.quantity, data.unit, data.unit_price, data.vat_rate, data.note, id);
+    'UPDATE bom_items SET component_name = ?, component_code = ?, quantity = ?, unit = ?, unit_price = ?, vat_rate = ?, note = ?, material = ?, specification = ?, color = ?, identifying_features = ?, pic_standard = ?, contract_no = ?, payment_status = ?, order_date = ?, needed_date = ? WHERE id = ?'
+  ).run(data.component_name, data.component_code, data.quantity, data.unit, data.unit_price, data.vat_rate, data.note, data.material || '', data.specification || '', data.color || '', data.identifying_features || '', data.pic_standard || '', data.contract_no || '', data.payment_status || '', data.order_date || '', data.needed_date || '', id);
   return { success: true };
 });
 
@@ -259,7 +289,7 @@ ipcMain.handle('inventory:delete', (_, id) => {
 // ORDERS
 ipcMain.handle('orders:getAll', () => {
   return db.prepare(`
-    SELECT o.*, p.name as product_name
+    SELECT o.*, p.name as product_name, p.code as product_code
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.id
     ORDER BY o.id DESC
@@ -269,8 +299,8 @@ ipcMain.handle('orders:getAll', () => {
 ipcMain.handle('orders:create', (_, data) => {
   try {
     const result = db.prepare(
-      'INSERT INTO orders (order_code, customer_name, product_id, quantity, total_price, status, delivery_date, assigned_to, note, delivered_quantity, vat_rate, vat_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.total_price, data.status, data.delivery_date, data.assigned_to, data.note, data.delivered_quantity || 0, data.vat_rate || 0.08, data.vat_amount || 0);
+      'INSERT INTO orders (order_code, customer_name, product_id, quantity, unit_price, total_price, status, order_date, delivery_date, payment_deadline, assigned_to, note, delivered_quantity, vat_rate, vat_amount, customer_phone, customer_email, customer_address, shipping_fee, discount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.unit_price || 0, data.total_price, data.status, data.order_date, data.delivery_date, data.payment_deadline, data.assigned_to, data.note, data.delivered_quantity || 0, data.vat_rate || 0.08, data.vat_amount || 0, data.customer_phone || '', data.customer_email || '', data.customer_address || '', data.shipping_fee || 0, data.discount || 0);
     return { success: true, id: result.lastInsertRowid };
   } catch (e) {
     return { success: false, message: e.message };
@@ -279,8 +309,8 @@ ipcMain.handle('orders:create', (_, data) => {
 
 ipcMain.handle('orders:update', (_, id, data) => {
   db.prepare(
-    'UPDATE orders SET order_code = ?, customer_name = ?, product_id = ?, quantity = ?, total_price = ?, status = ?, delivery_date = ?, assigned_to = ?, note = ?, delivered_quantity = ?, vat_rate = ?, vat_amount = ? WHERE id = ?'
-  ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.total_price, data.status, data.delivery_date, data.assigned_to, data.note, data.delivered_quantity, data.vat_rate, data.vat_amount, id);
+    'UPDATE orders SET order_code = ?, customer_name = ?, product_id = ?, quantity = ?, unit_price = ?, total_price = ?, status = ?, order_date = ?, delivery_date = ?, payment_deadline = ?, assigned_to = ?, note = ?, delivered_quantity = ?, vat_rate = ?, vat_amount = ?, customer_phone = ?, customer_email = ?, customer_address = ?, shipping_fee = ?, discount = ? WHERE id = ?'
+  ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.unit_price || 0, data.total_price, data.status, data.order_date, data.delivery_date, data.payment_deadline, data.assigned_to, data.note, data.delivered_quantity, data.vat_rate, data.vat_amount, data.customer_phone || '', data.customer_email || '', data.customer_address || '', data.shipping_fee || 0, data.discount || 0, id);
   return { success: true };
 });
 
@@ -353,6 +383,66 @@ ipcMain.handle('excel:import', async () => {
     const sheetName = workbook.SheetNames[0];
     const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
     return { success: true, data, fileName: path.basename(result.filePaths[0]) };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+});
+
+// EXCEL EXPORT
+ipcMain.handle('excel:exportOrders', async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Lưu file Excel đơn hàng',
+    defaultPath: `don-hang-${new Date().toISOString().split('T')[0]}.xlsx`,
+    filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+  });
+
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+
+  try {
+    const orders = db.prepare(`
+      SELECT o.*, p.name as product_name, p.code as product_code
+      FROM orders o
+      LEFT JOIN products p ON o.product_id = p.id
+      ORDER BY o.id DESC
+    `).all();
+
+    const data = orders.map(o => ({
+      'Mã đơn hàng': o.order_code,
+      'Khách hàng': o.customer_name,
+      'Sản phẩm': o.product_name || '',
+      'Mã SP': o.product_code || '',
+      'Số lượng': o.quantity,
+      'Đơn giá': o.unit_price,
+      'Thành tiền': o.total_price,
+      'VAT (%)': (o.vat_rate || 0.08) * 100,
+      'Tiền VAT': o.total_price * (o.vat_rate || 0.08),
+      'Phí ship': o.shipping_fee || 0,
+      'Giảm giá': o.discount || 0,
+      'Tổng cộng': o.total_price * (1 + (o.vat_rate || 0.08)) + (o.shipping_fee || 0) - (o.discount || 0),
+      'Đã giao': o.delivered_quantity || 0,
+      'Còn lại': Math.max(0, o.quantity - (o.delivered_quantity || 0)),
+      'Trạng thái': o.status === 'pending' ? 'Chờ xử lý' : o.status === 'processing' ? 'Đang sản xuất' : o.status === 'completed' ? 'Hoàn thành' : 'Đã hủy',
+      'Ngày đặt': o.order_date || '',
+      'Ngày giao': o.delivery_date || '',
+      'Ngày trả': o.payment_deadline || '',
+      'Ghi chú': o.note || '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Đơn hàng');
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 10 },
+      { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+      { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
+      { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      { wch: 20 },
+    ];
+
+    XLSX.writeFile(wb, result.filePath);
+    return { success: true, filePath: result.filePath };
   } catch (e) {
     return { success: false, message: e.message };
   }

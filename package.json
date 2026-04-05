@@ -13,26 +13,27 @@
   "author": "SENKI",
   "license": "MIT",
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0",
-    "xlsx": "^0.18.5",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.1.2",
     "exceljs": "^4.4.0",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
-    "bcryptjs": "^2.4.3",
+    "lucide-react": "^0.428.0",
     "pg": "^8.12.0",
-    "better-sqlite3": "^11.1.2",
-    "lucide-react": "^0.428.0"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.2",
     "electron": "^31.3.1",
     "electron-builder": "^24.13.3",
-    "vite": "^5.4.0",
+    "vite": "^5.4.21",
     "wait-on": "^7.2.0"
   },
   "build": {
