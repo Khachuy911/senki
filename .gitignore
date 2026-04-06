@@ -5,3 +5,14 @@ release/
 *.exe
 *.dmg
 .env
+.claude/
+.opencode/
+.repomixignore
+AGENTS.md
+CLAUDE.md
+docs/
+plans/
+release-manifest.json
+repomix-output.xml
+*.md
+.gitignore
