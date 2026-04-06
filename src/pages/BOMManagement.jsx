@@ -15,7 +15,8 @@ export default function BOMManagement() {
   const [editBom, setEditBom] = useState(null);
   const [newProduct, setNewProduct] = useState({ name: '', code: '', category: '' });
   const [newBom, setNewBom] = useState({
-    component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: ''
+    component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '',
+    material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '', needed_date: ''
   });
 
   useEffect(() => { loadProducts(); }, []);
@@ -60,7 +61,7 @@ export default function BOMManagement() {
         action: 'CREATE', table_name: 'bom_items', record_id: result.id,
         old_values: null, new_values: JSON.stringify(data)
       });
-      setNewBom({ component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '' });
+      setNewBom({ component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '', needed_date: '' });
       setShowAddBom(false);
       loadBom(selectedProduct.id);
     }
@@ -108,6 +109,15 @@ export default function BOMManagement() {
       unit_price: editBom.unit_price,
       vat_rate: editBom.vat_rate,
       note: editBom.note,
+      material: editBom.material || '',
+      specification: editBom.specification || '',
+      color: editBom.color || '',
+      identifying_features: editBom.identifying_features || '',
+      pic_standard: editBom.pic_standard || '',
+      contract_no: editBom.contract_no || '',
+      payment_status: editBom.payment_status || '',
+      order_date: editBom.order_date || '',
+      needed_date: editBom.needed_date || '',
     });
     await window.api.logAudit({
       user_id: user.id, username: user.username,
@@ -240,29 +250,67 @@ export default function BOMManagement() {
                       <th>STT</th>
                       <th>Tên linh kiện</th>
                       <th>Mã</th>
+                      <th>Vật liệu</th>
+                      <th>Quy cách</th>
+                      <th>Màu sắc</th>
+                      <th>Đặc điểm</th>
+                      <th>Tiêu chuẩn</th>
+                      <th>Hợp đồng</th>
+                      <th>Thanh toán</th>
+                      <th>Ngày đặt</th>
+                      <th>Ngày cần về</th>
+                      <th>Trạng thái</th>
                       <th>SL</th>
-                      <th>ĐVT</th>
                       <th>Đơn giá</th>
-                      <th>VAT</th>
                       <th>Thành tiền</th>
-                      <th>Ghi chú</th>
                       {canEdit() && <th>Thao tác</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {bomItems.map((item, i) => {
                       const subtotal = item.quantity * item.unit_price * (1 + item.vat_rate);
+                      // Color coding for needed_date
+                      const getStatusColor = () => {
+                        if (!item.needed_date) return '';
+                        const needed = new Date(item.needed_date);
+                        const today = new Date();
+                        const diffDays = Math.ceil((needed - today) / (1000 * 60 * 60 * 24));
+                        if (diffDays < 0) return '#dc2626'; // ĐỎ - quá hạn
+                        if (diffDays <= 7) return '#eab308'; // VÀNG - còn ≤ 7 ngày
+                        return '#16a34a'; // XANH - còn nhiều hơn 7 ngày
+                      };
+                      const getStatusLabel = () => {
+                        if (!item.needed_date) return '';
+                        const needed = new Date(item.needed_date);
+                        const today = new Date();
+                        const diffDays = Math.ceil((needed - today) / (1000 * 60 * 60 * 24));
+                        if (diffDays < 0) return 'ĐỎ';
+                        if (diffDays <= 7) return 'VÀNG';
+                        return 'XANH';
+                      };
                       return (
                         <tr key={item.id}>
                           <td>{i + 1}</td>
                           <td>{item.component_name}</td>
                           <td>{item.component_code}</td>
+                          <td>{item.material || '-'}</td>
+                          <td>{item.specification || '-'}</td>
+                          <td>{item.color || '-'}</td>
+                          <td>{item.identifying_features || '-'}</td>
+                          <td>{item.pic_standard || '-'}</td>
+                          <td>{item.contract_no || '-'}</td>
+                          <td>{item.payment_status || '-'}</td>
+                          <td>{item.order_date || '-'}</td>
+                          <td>
+                            {item.needed_date ? (
+                              <span style={{ background: getStatusColor(), color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
+                                {item.needed_date.split('T')[0]} {getStatusLabel()}
+                              </span>
+                            ) : '-'}
+                          </td>
                           <td>{item.quantity}</td>
-                          <td>{item.unit}</td>
                           <td className="text-right">{formatCurrency(item.unit_price)}</td>
-                          <td>{(item.vat_rate * 100).toFixed(0)}%</td>
                           <td className="text-right">{formatCurrency(subtotal)}</td>
-                          <td>{item.note}</td>
                           {canEdit() && (
                             <td>
                               <div style={{ display: 'flex', gap: 4 }}>
@@ -275,7 +323,7 @@ export default function BOMManagement() {
                       );
                     })}
                     {bomItems.length === 0 && (
-                      <tr><td colSpan="10" className="empty-state">Chưa có linh kiện nào</td></tr>
+                      <tr><td colSpan="16" className="empty-state">Chưa có linh kiện nào</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -317,7 +365,7 @@ export default function BOMManagement() {
       {/* Add BOM Item Modal */}
       {showAddBom && (
         <div className="modal-overlay" onClick={() => setShowAddBom(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
             <h3>Thêm linh kiện - {selectedProduct.name}</h3>
             <form onSubmit={handleAddBom}>
               <div className="form-row">
@@ -332,22 +380,62 @@ export default function BOMManagement() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Số lượng</label>
-                  <input type="number" min="1" value={newBom.quantity} onChange={(e) => setNewBom({ ...newBom, quantity: parseInt(e.target.value) })} />
+                  <label>Vật liệu</label>
+                  <input value={newBom.material} onChange={(e) => setNewBom({ ...newBom, material: e.target.value })} />
                 </div>
                 <div className="form-group">
-                  <label>Đơn vị</label>
-                  <input value={newBom.unit} onChange={(e) => setNewBom({ ...newBom, unit: e.target.value })} />
+                  <label>Quy cách (KTx / Độ dày mm)</label>
+                  <input value={newBom.specification} onChange={(e) => setNewBom({ ...newBom, specification: e.target.value })} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Đơn giá</label>
-                  <input type="number" min="0" value={newBom.unit_price} onChange={(e) => setNewBom({ ...newBom, unit_price: parseFloat(e.target.value) })} />
+                  <label>Màu sắc</label>
+                  <input value={newBom.color} onChange={(e) => setNewBom({ ...newBom, color: e.target.value })} />
                 </div>
                 <div className="form-group">
-                  <label>VAT (%)</label>
-                  <input type="number" min="0" max="1" step="0.01" value={newBom.vat_rate} onChange={(e) => setNewBom({ ...newBom, vat_rate: parseFloat(e.target.value) })} />
+                  <label>Đặc điểm nhận dạng</label>
+                  <input value={newBom.identifying_features} onChange={(e) => setNewBom({ ...newBom, identifying_features: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Tiêu chuẩn (P.I.C / Tình trạng)</label>
+                  <input value={newBom.pic_standard} onChange={(e) => setNewBom({ ...newBom, pic_standard: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Hợp đồng</label>
+                  <input value={newBom.contract_no} onChange={(e) => setNewBom({ ...newBom, contract_no: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Thanh toán</label>
+                  <input value={newBom.payment_status} onChange={(e) => setNewBom({ ...newBom, payment_status: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Ngày đặt hàng</label>
+                  <input type="date" value={newBom.order_date} onChange={(e) => setNewBom({ ...newBom, order_date: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Ngày cần lk về</label>
+                  <input type="date" value={newBom.needed_date} onChange={(e) => setNewBom({ ...newBom, needed_date: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Số lượng</label>
+                  <input type="number" min="1" value={newBom.quantity} onChange={(e) => setNewBom({ ...newBom, quantity: parseInt(e.target.value) })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Đơn vị</label>
+                  <input value={newBom.unit} onChange={(e) => setNewBom({ ...newBom, unit: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Đơn giá</label>
+                  <input type="number" min="0" value={newBom.unit_price} onChange={(e) => setNewBom({ ...newBom, unit_price: parseFloat(e.target.value) })} />
                 </div>
               </div>
               <div className="form-group">
@@ -392,7 +480,7 @@ export default function BOMManagement() {
       {/* Edit BOM Item Modal */}
       {showEditBom && editBom && (
         <div className="modal-overlay" onClick={() => setShowEditBom(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
             <h3>Sửa linh kiện</h3>
             <form onSubmit={handleEditBom}>
               <div className="form-row">
@@ -407,22 +495,62 @@ export default function BOMManagement() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Số lượng</label>
-                  <input type="number" min="1" value={editBom.quantity} onChange={(e) => setEditBom({ ...editBom, quantity: parseInt(e.target.value) || 1 })} />
+                  <label>Vật liệu</label>
+                  <input value={editBom.material || ''} onChange={(e) => setEditBom({ ...editBom, material: e.target.value })} />
                 </div>
                 <div className="form-group">
-                  <label>Đơn vị</label>
-                  <input value={editBom.unit} onChange={(e) => setEditBom({ ...editBom, unit: e.target.value })} />
+                  <label>Quy cách (KTx / Độ dày mm)</label>
+                  <input value={editBom.specification || ''} onChange={(e) => setEditBom({ ...editBom, specification: e.target.value })} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Đơn giá</label>
-                  <input type="number" min="0" value={editBom.unit_price} onChange={(e) => setEditBom({ ...editBom, unit_price: parseFloat(e.target.value) || 0 })} />
+                  <label>Màu sắc</label>
+                  <input value={editBom.color || ''} onChange={(e) => setEditBom({ ...editBom, color: e.target.value })} />
                 </div>
                 <div className="form-group">
-                  <label>VAT (tỷ lệ, VD: 0.08 = 8%)</label>
-                  <input type="number" min="0" max="1" step="0.01" value={editBom.vat_rate} onChange={(e) => setEditBom({ ...editBom, vat_rate: parseFloat(e.target.value) || 0 })} />
+                  <label>Đặc điểm nhận dạng</label>
+                  <input value={editBom.identifying_features || ''} onChange={(e) => setEditBom({ ...editBom, identifying_features: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Tiêu chuẩn (P.I.C / Tình trạng)</label>
+                  <input value={editBom.pic_standard || ''} onChange={(e) => setEditBom({ ...editBom, pic_standard: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Hợp đồng</label>
+                  <input value={editBom.contract_no || ''} onChange={(e) => setEditBom({ ...editBom, contract_no: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Thanh toán</label>
+                  <input value={editBom.payment_status || ''} onChange={(e) => setEditBom({ ...editBom, payment_status: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Ngày đặt hàng</label>
+                  <input type="date" value={editBom.order_date || ''} onChange={(e) => setEditBom({ ...editBom, order_date: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Ngày cần lk về</label>
+                  <input type="date" value={editBom.needed_date || ''} onChange={(e) => setEditBom({ ...editBom, needed_date: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Số lượng</label>
+                  <input type="number" min="1" value={editBom.quantity} onChange={(e) => setEditBom({ ...editBom, quantity: parseInt(e.target.value) || 1 })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Đơn vị</label>
+                  <input value={editBom.unit} onChange={(e) => setEditBom({ ...editBom, unit: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Đơn giá</label>
+                  <input type="number" min="0" value={editBom.unit_price} onChange={(e) => setEditBom({ ...editBom, unit_price: parseFloat(e.target.value) || 0 })} />
                 </div>
               </div>
               <div className="form-group">
