@@ -12,11 +12,11 @@ import Purchasing from '../pages/Purchasing';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Tổng quan', icon: '📊' },
-  { id: 'bom', label: 'BOM', icon: '📋' },
   { id: 'orders', label: 'Đơn hàng', icon: '🛒' },
   { id: 'planning', label: 'Kế hoạch', icon: '⚙️' },
-  { id: 'inventory', label: 'Kho', icon: '📦' },
   { id: 'purchasing', label: 'Mua hàng', icon: '🛒' },
+  { id: 'bom', label: 'BOM', icon: '📋' },
+  { id: 'inventory', label: 'Kho', icon: '📦' },
   { id: 'audit', label: 'Lịch sử', icon: '📝' },
   { id: 'users', label: 'Người dùng', icon: '👥', adminOnly: true },
 ];

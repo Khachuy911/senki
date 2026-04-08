@@ -293,7 +293,7 @@ export default function Orders() {
             <form onSubmit={handleAdd}>
               <div className="form-row">
                 <div className="form-group"><label>Mã đơn hàng</label><input required value={newOrder.order_code} readOnly /></div>
-                <div className="form-group"><label>Khách hàng</label><input required value={newOrder.customer_name} onChange={(e) => setNewOrder({ ...newOrder, customer_name: e.target.value })} /></div>
+                <div className="form-group"><label>Khách hàng</label><input required value={newOrder.customer_name} onChange={(e) => setNewOrder({ ...newOrder, customer_name: e.target.value })} placeholder="Nhập tên khách hàng" /></div>
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -303,25 +303,23 @@ export default function Orders() {
                     {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
                   </select>
                 </div>
-                <div className="form-group"><label>Tổng số lượng</label><input type="number" min="1" value={newOrder.quantity || ''} onChange={(e) => {
+                <div className="form-group"><label>Tổng số lượng</label><input type="number" min="1" value={newOrder.quantity} onChange={(e) => {
                     const val = e.target.value;
-                    const num = val === '' ? '' : (parseInt(val) || 1);
-                    const qty = num === '' ? 0 : num;
-                    setNewOrder({ ...newOrder, quantity: num, total_price: qty * (newOrder.unit_price || 0) });
+                    const qty = val === '' ? 0 : (parseInt(val) || 0);
+                    setNewOrder({ ...newOrder, quantity: qty, total_price: qty * (newOrder.unit_price || 0) });
                   }} /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Đơn giá (VNĐ)</label><input type="number" min="0" value={newOrder.unit_price || ''} onChange={(e) => {
+                <div className="form-group"><label>Đơn giá (VNĐ)</label><input type="number" min="0" value={newOrder.unit_price} onChange={(e) => {
                     const val = e.target.value;
-                    const num = val === '' ? '' : (parseFloat(val) || 0);
-                    const price = num === '' ? 0 : num;
-                    setNewOrder({ ...newOrder, unit_price: num, total_price: price * (newOrder.quantity || 1) });
+                    const price = val === '' ? 0 : (parseFloat(val) || 0);
+                    setNewOrder({ ...newOrder, unit_price: price, total_price: price * (newOrder.quantity || 0) });
                   }} /></div>
-                <div className="form-group"><label>Tổng tiền (chưa VAT)</label><input type="number" min="0" value={newOrder.total_price || ''} readOnly /></div>
+                <div className="form-group"><label>Tổng tiền (chưa VAT)</label><input type="number" min="0" value={newOrder.total_price} readOnly /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Thuế VAT (%)</label><input type="number" step="0.01" min="0" value={newOrder.vat_rate || ''} onChange={(e) => setNewOrder({ ...newOrder, vat_rate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} /></div>
-                <div className="form-group"><label>Tổng tiền (có VAT)</label><input type="number" value={newOrder.total_price * (1 + (newOrder.vat_rate || 0)) || ''} readOnly /></div>
+                <div className="form-group"><label>Thuế VAT (%)</label><input type="number" step="0.01" min="0" value={newOrder.vat_rate} onChange={(e) => setNewOrder({ ...newOrder, vat_rate: e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0) })} /></div>
+                <div className="form-group"><label>Tổng tiền (có VAT)</label><input type="number" value={newOrder.total_price * (1 + newOrder.vat_rate)} readOnly /></div>
               </div>
               <div className="form-row">
                 <div className="form-group">

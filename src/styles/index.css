@@ -497,6 +497,20 @@ tbody tr:hover {
   background: var(--success-hover);
 }
 
+.btn-danger {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
+}
+
 .btn-sm {
   padding: 5px 12px;
   font-size: 12px;

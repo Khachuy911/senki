@@ -354,6 +354,28 @@ ipcMain.handle('inventory:adjust', (_, data) => {
   }
 });
 
+ipcMain.handle('inventory:autoStock', (_, data) => {
+  // data = { component_code, component_name, quantity, unit, note }
+  // Auto-add to inventory: create if not exists, update if exists
+  try {
+    const existing = db.prepare('SELECT id, quantity FROM inventory WHERE component_code = ?').get(data.component_code);
+    if (existing) {
+      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE component_code = ?')
+        .run(data.quantity, data.component_code);
+    } else {
+      db.prepare(
+        'INSERT INTO inventory (component_name, component_code, quantity, unit, unit_price, min_stock, location) VALUES (?, ?, ?, ?, 0, 0, ?)'
+      ).run(data.component_name, data.component_code, data.quantity, data.unit, data.location || '');
+    }
+    db.prepare(
+      'INSERT INTO inventory_transactions (component_code, type, quantity, reference_type, note) VALUES (?, ?, ?, ?, ?)'
+    ).run(data.component_code, 'auto_stock', data.quantity, 'over_delivery', data.note || 'Tự động cập nhật từ mua hàng vượt đơn');
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+});
+
 ipcMain.handle('inventory:getPendingReservations', () => {
   // Get sum of pending purchase reservations
   return db.prepare(`
@@ -530,7 +552,14 @@ ipcMain.handle('purchasing:update', (_, id, data) => {
 });
 
 ipcMain.handle('purchasing:delete', (_, id) => {
-  db.prepare('DELETE FROM purchasing WHERE id = ?').run(id);
+  // Get purchase info before deleting for audit
+  const purchase = db.prepare('SELECT * FROM purchasing WHERE id = ?').get(id);
+  if (purchase) {
+    // Delete associated purchase reservations (reserved quantity in planning)
+    db.prepare('DELETE FROM purchase_reservations WHERE purchase_id = ?').run(id);
+    // Delete the purchase order
+    db.prepare('DELETE FROM purchasing WHERE id = ?').run(id);
+  }
   return { success: true };
 });
 
@@ -759,6 +788,27 @@ ipcMain.handle('mrp:calculate', (_, planItems) => {
   }
 
   return results;
+});
+
+// CLEAR ALL DATA
+ipcMain.handle('data:clearAll', () => {
+  try {
+    if (!db) {
+      return { success: false, message: 'Database not initialized' };
+    }
+    db.exec('DELETE FROM purchase_request_items');
+    db.exec('DELETE FROM purchase_requests');
+    db.exec('DELETE FROM purchasing');
+    db.exec('DELETE FROM orders');
+    db.exec('DELETE FROM inventory');
+    db.exec('DELETE FROM bom_items');
+    db.exec('DELETE FROM products');
+    db.exec('DELETE FROM audit_logs');
+    return { success: true, message: 'Đã xóa toàn bộ dữ liệu' };
+  } catch (e) {
+    console.error('Clear data error:', e);
+    return { success: false, message: e.message };
+  }
 });
 
 // APP LIFECYCLE
