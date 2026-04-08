@@ -6,8 +6,10 @@ export default function BOMManagement() {
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [bomItems, setBomItems] = useState([]);
+  const [bomCountMap, setBomCountMap] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddProduct, setShowAddProduct] = useState(false);
+  const [editingProductId, setEditingProductId] = useState(null);
   const [showAddBom, setShowAddBom] = useState(false);
   const [showCopyBom, setShowCopyBom] = useState(false);
   const [copySourceId, setCopySourceId] = useState('');
@@ -19,11 +21,18 @@ export default function BOMManagement() {
     material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '', needed_date: ''
   });
 
-  useEffect(() => { loadProducts(); }, []);
+  useEffect(() => { loadProductsWithBomCount(); }, []);
 
-  const loadProducts = async () => {
+  const loadProductsWithBomCount = async () => {
     const data = await window.api.getProducts();
     setProducts(data);
+    // Load BOM count for each product
+    const counts = {};
+    for (const p of data) {
+      const items = await window.api.getBomByProduct(p.id);
+      counts[p.id] = items.length;
+    }
+    setBomCountMap(counts);
   };
 
   const loadBom = async (productId) => {
@@ -38,17 +47,29 @@ export default function BOMManagement() {
 
   const handleAddProduct = async (e) => {
     e.preventDefault();
-    const result = await window.api.createProduct(newProduct);
-    if (result.success) {
+    if (editingProductId) {
+      // Edit existing product
+      await window.api.updateProduct(editingProductId, newProduct);
       await window.api.logAudit({
         user_id: user.id, username: user.username,
-        action: 'CREATE', table_name: 'products', record_id: result.id,
+        action: 'UPDATE', table_name: 'products', record_id: editingProductId,
         old_values: null, new_values: JSON.stringify(newProduct)
       });
-      setNewProduct({ name: '', code: '', category: '' });
-      setShowAddProduct(false);
-      loadProducts();
+      setEditingProductId(null);
+    } else {
+      // Add new product
+      const result = await window.api.createProduct(newProduct);
+      if (result.success) {
+        await window.api.logAudit({
+          user_id: user.id, username: user.username,
+          action: 'CREATE', table_name: 'products', record_id: result.id,
+          old_values: null, new_values: JSON.stringify(newProduct)
+        });
+      }
     }
+    setNewProduct({ name: '', code: '', category: '' });
+    setShowAddProduct(false);
+    loadProducts();
   };
 
   const handleAddBom = async (e) => {
@@ -174,8 +195,6 @@ export default function BOMManagement() {
     (p.code && p.code.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const formatCurrency = (num) => Number(num || 0).toLocaleString('vi-VN') + ' ₫';
-
   return (
     <div className="page">
       <div className="page-header">
@@ -184,7 +203,8 @@ export default function BOMManagement() {
           {canEdit() && (
             <>
               <button className="btn-success" onClick={handleImportExcel}>📥 Import Excel</button>
-              <button className="btn-primary" onClick={() => setShowAddProduct(true)}>+ Thêm sản phẩm</button>
+              <button className="btn-primary" onClick={() => { setEditingProductId(null); setNewProduct({ name: '', code: '', category: '' }); setShowAddProduct(true); }}>+ Thêm sản phẩm</button>
+              <button className="btn-secondary" disabled={!selectedProduct} onClick={() => { if (selectedProduct) { setEditingProductId(selectedProduct.id); setNewProduct({ name: selectedProduct.name, code: selectedProduct.code || '', category: selectedProduct.category || '' }); setShowAddProduct(true); } }}>✏️ Sửa sản phẩm</button>
             </>
           )}
         </div>
@@ -212,8 +232,8 @@ export default function BOMManagement() {
                   className={`product-item ${selectedProduct?.id === p.id ? 'active' : ''}`}
                   onClick={() => selectProduct(p)}
                 >
-                  <div className="product-name">{p.name}</div>
-                  <div className="product-code">{p.code}</div>
+                  <div className="product-name">{p.name} {p.code ? <span className="product-code">({p.code})</span> : null}</div>
+                  <span className="bom-count">{bomCountMap[p.id] || 0} LK</span>
                   {canDelete() && (
                     <button
                       className="btn-icon btn-danger-icon"
@@ -259,16 +279,12 @@ export default function BOMManagement() {
                       <th>Thanh toán</th>
                       <th>Ngày đặt</th>
                       <th>Ngày cần về</th>
-                      <th>Trạng thái</th>
                       <th>SL</th>
-                      <th>Đơn giá</th>
-                      <th>Thành tiền</th>
                       {canEdit() && <th>Thao tác</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {bomItems.map((item, i) => {
-                      const subtotal = item.quantity * item.unit_price * (1 + item.vat_rate);
                       // Color coding for needed_date
                       const getStatusColor = () => {
                         if (!item.needed_date) return '';
@@ -308,9 +324,7 @@ export default function BOMManagement() {
                               </span>
                             ) : '-'}
                           </td>
-                          <td>{item.quantity}</td>
-                          <td className="text-right">{formatCurrency(item.unit_price)}</td>
-                          <td className="text-right">{formatCurrency(subtotal)}</td>
+                          <td>{item.quantity} {item.unit}</td>
                           {canEdit() && (
                             <td>
                               <div style={{ display: 'flex', gap: 4 }}>
@@ -323,13 +337,13 @@ export default function BOMManagement() {
                       );
                     })}
                     {bomItems.length === 0 && (
-                      <tr><td colSpan="16" className="empty-state">Chưa có linh kiện nào</td></tr>
+                      <tr><td colSpan={canEdit() ? 14 : 13} className="empty-state">Chưa có linh kiện nào</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="empty-state-large">Chọn một sản phẩm ở bên trái để xem định mức vật tư (BOM)</div>
+              <div className="empty-state-large">Chọn một sản phẩm ở danh sách trên để xem định mức vật tư (BOM)</div>
             )}
           </div>
         </div>
@@ -337,9 +351,9 @@ export default function BOMManagement() {
 
       {/* Add Product Modal */}
       {showAddProduct && (
-        <div className="modal-overlay" onClick={() => setShowAddProduct(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Thêm sản phẩm mới</h3>
+        <div className="modal-overlay" onClick={() => { setShowAddProduct(false); setEditingProductId(null); setNewProduct({ name: '', code: '', category: '' }); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ zIndex: 1001 }}>
+            <h3>{editingProductId ? 'Sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
             <form onSubmit={handleAddProduct}>
               <div className="form-group">
                 <label>Tên sản phẩm</label>

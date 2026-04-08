@@ -395,25 +395,36 @@ export default function Orders() {
                 <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#333' }}>Chi tiết đơn hàng</h4>
                 <div className="form-row">
                   <div className="form-group">
+                    <label>Trạng thái</label>
+                    <select value={editingOrder.status || 'pending'} onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value })}>
+                      <option value="pending">Chờ xử lý</option>
+                      <option value="processing">Đang sản xuất</option>
+                      <option value="completed">Hoàn thành</option>
+                      <option value="cancelled">Đã hủy</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
                     <label>Sản phẩm</label>
                     <select value={editingOrder.product_id || ''} onChange={(e) => setEditingOrder({ ...editingOrder, product_id: e.target.value })}>
                       <option value="">-- Chọn sản phẩm --</option>
                       {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
                     </select>
                   </div>
+                </div>
+                <div className="form-row">
                   <div className="form-group">
                     <label>Số lượng</label>
                     <input type="number" min="1" value={editingOrder.quantity} onChange={(e) => setEditingOrder({ ...editingOrder, quantity: parseInt(e.target.value) || 1, total_price: (parseInt(e.target.value) || 1) * editingOrder.unit_price })} />
+                  </div>
+                  <div className="form-group">
+                    <label>Đã giao</label>
+                    <input type="number" min="0" max={editingOrder.quantity} value={editingOrder.delivered_quantity || 0} onChange={(e) => setEditingOrder({ ...editingOrder, delivered_quantity: parseInt(e.target.value) || 0 })} />
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label>Đơn giá</label>
                     <input type="number" min="0" value={editingOrder.unit_price || 0} onChange={(e) => setEditingOrder({ ...editingOrder, unit_price: parseFloat(e.target.value) || 0, total_price: (parseFloat(e.target.value) || 0) * editingOrder.quantity })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Đã giao</label>
-                    <input type="number" min="0" max={editingOrder.quantity} value={editingOrder.delivered_quantity || 0} onChange={(e) => setEditingOrder({ ...editingOrder, delivered_quantity: parseInt(e.target.value) || 0 })} />
                   </div>
                 </div>
               </div>

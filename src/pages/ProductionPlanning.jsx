@@ -13,8 +13,9 @@ export default function ProductionPlanning() {
     const orders = await window.api.getOrders();
     setProducts(data);
     
-    // Calculate total required per product from active orders
-    const activeOrders = orders.filter(o => o.status === 'pending' || o.status === 'processing');
+    // Calculate total required per product from pending orders only
+    // (Orders with status 'processing' are already in production, so don't recalculate)
+    const activeOrders = orders.filter(o => o.status === 'pending');
     const requiredByProduct = {};
     activeOrders.forEach(o => {
       const remaining = Math.max(0, o.quantity - (o.delivered_quantity || 0));
@@ -67,7 +68,7 @@ export default function ProductionPlanning() {
     }
     const res = await window.api.createPurchases(shortages);
     if (res.success) {
-      alert(`Đã tạo yêu cầu mua hàng cho ${shortages.length} mã linh kiện bị thiếu! Bạn có thể xem tại trang "Mua Hàng".`);
+      alert(`Đã tạo yêu cầu mua hàng ${res.request_code || ''} cho ${shortages.length} mã linh kiện bị thiếu! Bạn có thể xem tại trang "Mua Hàng".`);
     } else {
       alert(res.message || 'Lỗi tạo yêu cầu mua hàng');
     }
@@ -165,6 +166,7 @@ export default function ProductionPlanning() {
                   <th>ĐVT</th>
                   <th>Tổng cần</th>
                   <th>Tồn kho</th>
+                  <th>Đã đặt</th>
                   <th>Cần nhập thêm</th>
                   <th>Đơn giá</th>
                   <th>Chi phí dự trù</th>
@@ -180,6 +182,7 @@ export default function ProductionPlanning() {
                     <td>{r.unit}</td>
                     <td><strong>{r.total_required}</strong></td>
                     <td>{r.in_stock}</td>
+                    <td style={{ color: '#2563eb' }}>{r.already_ordered || 0}</td>
                     <td>
                       <span className={r.shortage > 0 ? 'badge badge-danger' : 'badge badge-success'}>
                         {r.shortage > 0 ? `⚠ ${r.shortage}` : '✓ Đủ'}
@@ -202,7 +205,7 @@ export default function ProductionPlanning() {
                   </tr>
                 ))}
                 {results.length === 0 && (
-                  <tr><td colSpan="10" className="empty-state">Các sản phẩm được chọn chưa có BOM</td></tr>
+                  <tr><td colSpan="11" className="empty-state">Các sản phẩm được chọn chưa có BOM</td></tr>
                 )}
               </tbody>
             </table>

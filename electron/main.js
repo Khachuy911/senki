@@ -112,6 +112,54 @@ function initDatabase() {
       note TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS purchase_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_code TEXT UNIQUE NOT NULL,
+      product_id INTEGER,
+      product_name TEXT,
+      status TEXT DEFAULT 'pending',
+      notes TEXT,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_request_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL,
+      bom_item_id INTEGER,
+      component_name TEXT NOT NULL,
+      component_code TEXT,
+      unit TEXT DEFAULT 'pcs',
+      bom_quantity INTEGER NOT NULL,
+      ordered_quantity INTEGER DEFAULT 0,
+      requested_quantity INTEGER NOT NULL,
+      unit_price REAL DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      notes TEXT,
+      FOREIGN KEY (request_id) REFERENCES purchase_requests(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS inventory_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      component_code TEXT NOT NULL,
+      type TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      reference_id INTEGER,
+      reference_type TEXT,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_reservations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      component_code TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      purchase_id INTEGER,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Upgrade existing orders table
@@ -286,6 +334,36 @@ ipcMain.handle('inventory:delete', (_, id) => {
   return { success: true };
 });
 
+ipcMain.handle('inventory:adjust', (_, data) => {
+  // data = { component_code, quantity_change, note }
+  // quantity_change can be positive (add) or negative (deduct)
+  try {
+    // Update inventory
+    db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
+      .run(data.quantity_change, data.component_code);
+
+    // Log transaction
+    const type = data.quantity_change > 0 ? 'manual_add' : 'manual_deduct';
+    db.prepare(
+      'INSERT INTO inventory_transactions (component_code, type, quantity, reference_type, note) VALUES (?, ?, ?, ?, ?)'
+    ).run(data.component_code, type, Math.abs(data.quantity_change), 'manual', data.note || 'Điều chỉnh tay');
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+});
+
+ipcMain.handle('inventory:getPendingReservations', () => {
+  // Get sum of pending purchase reservations
+  return db.prepare(`
+    SELECT component_code, SUM(quantity) as pending_qty
+    FROM purchase_reservations
+    WHERE status = 'pending'
+    GROUP BY component_code
+  `).all();
+});
+
 // ORDERS
 ipcMain.handle('orders:getAll', () => {
   return db.prepare(`
@@ -308,9 +386,32 @@ ipcMain.handle('orders:create', (_, data) => {
 });
 
 ipcMain.handle('orders:update', (_, id, data) => {
+  // Get old order data for comparison
+  const oldOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+  const oldStatus = oldOrder ? oldOrder.status : '';
+  const newStatus = data.status;
+
+  // Perform update
   db.prepare(
     'UPDATE orders SET order_code = ?, customer_name = ?, product_id = ?, quantity = ?, unit_price = ?, total_price = ?, status = ?, order_date = ?, delivery_date = ?, payment_deadline = ?, assigned_to = ?, note = ?, delivered_quantity = ?, vat_rate = ?, vat_amount = ?, customer_phone = ?, customer_email = ?, customer_address = ?, shipping_fee = ?, discount = ? WHERE id = ?'
   ).run(data.order_code, data.customer_name, data.product_id, data.quantity, data.unit_price || 0, data.total_price, data.status, data.order_date, data.delivery_date, data.payment_deadline, data.assigned_to, data.note, data.delivered_quantity, data.vat_rate, data.vat_amount, data.customer_phone || '', data.customer_email || '', data.customer_address || '', data.shipping_fee || 0, data.discount || 0, id);
+
+  // If status changed to 'processing', deduct inventory
+  if (oldStatus !== 'processing' && newStatus === 'processing') {
+    // Get BOM items for this product
+    const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(data.product_id);
+    for (const bom of bomItems) {
+      const deductQty = bom.quantity * data.quantity;
+      // Deduct from inventory
+      db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE component_code = ?')
+        .run(deductQty, bom.component_code);
+      // Log transaction
+      db.prepare(
+        'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(bom.component_code, 'order_deduct', deductQty, id, 'order', `Đơn hàng ${data.order_code} - SX`);
+    }
+  }
+
   return { success: true };
 });
 
@@ -337,34 +438,145 @@ ipcMain.handle('purchasing:getAll', () => {
 });
 
 ipcMain.handle('purchasing:createMultiple', (_, items) => {
-  const insert = db.prepare(
-    `INSERT INTO purchasing (component_name, component_code, quantity, unit, order_date, expected_date, pic) 
-     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, date('now', '+7 days'), 'Phòng Thu Mua')`
-  );
-  
-  const insertMany = db.transaction((items) => {
-    for (const item of items) {
-      insert.run(item.component_name, item.component_code, item.shortage, item.unit);
-    }
-  });
-
   try {
-    insertMany(items);
-    return { success: true };
+    // Create purchase request header
+    const today = new Date();
+    const year = today.getFullYear();
+    // Get last request code to generate next number
+    const lastRequest = db.prepare(
+      "SELECT request_code FROM purchase_requests WHERE request_code LIKE ? ORDER BY id DESC LIMIT 1"
+    ).get(`PR-${year}-%`);
+    let seqNum = 1;
+    if (lastRequest) {
+      const lastNum = parseInt(lastRequest.request_code.split('-')[2]);
+      seqNum = lastNum + 1;
+    }
+    const requestCode = `PR-${year}-${String(seqNum).padStart(4, '0')}`;
+
+    const insertRequest = db.prepare(
+      `INSERT INTO purchase_requests (request_code, status, created_at) VALUES (?, 'pending', CURRENT_TIMESTAMP)`
+    );
+    const requestResult = insertRequest.run(requestCode);
+    const requestId = requestResult.lastInsertRowid;
+
+    // Insert items into purchasing and link to request
+    const insertPurchase = db.prepare(
+      `INSERT INTO purchasing (component_name, component_code, quantity, unit, order_date, expected_date, pic, note)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, date('now', '+7 days'), 'Phòng Thu Mua', ?)`
+    );
+
+    const insertRequestItem = db.prepare(
+      `INSERT INTO purchase_request_items (request_id, component_name, component_code, unit, bom_quantity, ordered_quantity, requested_quantity, unit_price, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+    );
+
+    const createAll = db.transaction((items) => {
+      for (const item of items) {
+        if (item.shortage > 0) {
+          insertPurchase.run(item.component_name, item.component_code, item.shortage, item.unit, `PR: ${requestCode}`);
+          const purchaseId = db.prepare('SELECT last_insert_rowid() as id').get();
+          insertRequestItem.run(
+            requestId,
+            item.component_name,
+            item.component_code,
+            item.unit,
+            item.total_required || item.shortage,
+            0,
+            item.shortage,
+            item.unit_price || 0
+          );
+          // Create purchase reservation
+          db.prepare(
+            'INSERT INTO purchase_reservations (component_code, quantity, purchase_id, status) VALUES (?, ?, ?, ?)'
+          ).run(item.component_code, item.shortage, purchaseId.lastInsertRowid, 'pending');
+        }
+      }
+    });
+
+    createAll(items);
+    return { success: true, request_code: requestCode, request_id: requestId };
   } catch (e) {
     return { success: false, message: e.message };
   }
 });
 
 ipcMain.handle('purchasing:update', (_, id, data) => {
+  // Get old data to calculate quantity change
+  const oldPurchase = db.prepare('SELECT * FROM purchasing WHERE id = ?').get(id);
+  const oldActualQty = oldPurchase ? oldPurchase.actual_quantity : 0;
+  const newActualQty = data.actual_quantity || 0;
+
+  // Perform update
   db.prepare(
     'UPDATE purchasing SET pic = ?, contract_no = ?, payment_status = ?, expected_date = ?, actual_quantity = ?, note = ? WHERE id = ?'
-  ).run(data.pic, data.contract_no, data.payment_status, data.expected_date, data.actual_quantity, data.note, id);
+  ).run(data.pic, data.contract_no, data.payment_status, data.expected_date, newActualQty, data.note, id);
+
+  // If actual_quantity increased, add to inventory and mark reservation received
+  const qtyDiff = newActualQty - oldActualQty;
+  if (qtyDiff > 0 && oldPurchase) {
+    db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
+      .run(qtyDiff, oldPurchase.component_code);
+    // Log transaction
+    db.prepare(
+      'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(oldPurchase.component_code, 'purchase_add', qtyDiff, id, 'purchase', `Nhận hàng từ PO`);
+    // Mark reservation as received
+    db.prepare(
+      "UPDATE purchase_reservations SET status = 'received' WHERE purchase_id = ? AND status = 'pending'"
+    ).run(id);
+  }
+
   return { success: true };
 });
 
 ipcMain.handle('purchasing:delete', (_, id) => {
   db.prepare('DELETE FROM purchasing WHERE id = ?').run(id);
+  return { success: true };
+});
+
+// PURCHASE REQUESTS
+ipcMain.handle('purchase_requests:getAll', () => {
+  const requests = db.prepare(`
+    SELECT pr.*, p.name as product_name, p.code as product_code
+    FROM purchase_requests pr
+    LEFT JOIN products p ON pr.product_id = p.id
+    ORDER BY pr.id DESC
+  `).all();
+
+  // Get items for each request
+  for (const req of requests) {
+    const items = db.prepare('SELECT * FROM purchase_request_items WHERE request_id = ?').all(req.id);
+    req.items = items;
+    req.total_items = items.length;
+    req.total_quantity = items.reduce((sum, item) => sum + item.requested_quantity, 0);
+  }
+  return requests;
+});
+
+ipcMain.handle('purchase_requests:getByProduct', (_, productId) => {
+  const requests = db.prepare(`
+    SELECT pr.*, p.name as product_name
+    FROM purchase_requests pr
+    LEFT JOIN products p ON pr.product_id = p.id
+    WHERE pr.product_id = ?
+    ORDER BY pr.id DESC
+  `).all(productId);
+
+  for (const req of requests) {
+    const items = db.prepare('SELECT * FROM purchase_request_items WHERE request_id = ?').all(req.id);
+    req.items = items;
+  }
+  return requests;
+});
+
+ipcMain.handle('purchase_requests:delete', (_, id) => {
+  // Delete will cascade to purchase_request_items due to foreign key
+  db.prepare('DELETE FROM purchase_requests WHERE id = ?').run(id);
+  return { success: true };
+});
+
+ipcMain.handle('purchase_requests:updateStatus', (_, id, status) => {
+  db.prepare('UPDATE purchase_requests SET status = ? WHERE id = ?').run(status, id);
   return { success: true };
 });
 
@@ -515,16 +727,23 @@ ipcMain.handle('mrp:calculate', (_, planItems) => {
     }
   }
 
-  // Step 2: Compare with inventory
+  // Step 2: Compare with inventory AND pending reservations
   const results = [];
   for (const key of Object.keys(materialNeeds)) {
     const need = materialNeeds[key];
     let inStock = 0;
+    let pendingReservation = 0;
     if (need.component_code) {
+      // Get inventory stock
       const inv = db.prepare('SELECT quantity FROM inventory WHERE component_code = ?').get(need.component_code);
       if (inv) inStock = inv.quantity;
+      // Get pending reservation from purchase_reservations table
+      const reservation = db.prepare(
+        `SELECT COALESCE(SUM(quantity), 0) as pending FROM purchase_reservations WHERE component_code = ? AND status = 'pending'`
+      ).get(need.component_code);
+      pendingReservation = reservation ? reservation.pending : 0;
     }
-    const shortage = Math.max(0, need.total_required - inStock);
+    const shortage = Math.max(0, need.total_required - inStock - pendingReservation);
     results.push({
       component_name: need.component_name,
       component_code: need.component_code,
@@ -532,6 +751,7 @@ ipcMain.handle('mrp:calculate', (_, planItems) => {
       unit_price: need.unit_price,
       total_required: need.total_required,
       in_stock: inStock,
+      already_ordered: pendingReservation,
       shortage: shortage,
       estimated_cost: shortage * (need.unit_price || 0),
       details: need.details,

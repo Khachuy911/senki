@@ -6,6 +6,9 @@ export default function Inventory() {
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [showAdjust, setShowAdjust] = useState(false);
+  const [adjustItem, setAdjustItem] = useState(null);
+  const [adjustData, setAdjustData] = useState({ quantity_change: 0, note: '' });
   const [newItem, setNewItem] = useState({
     component_name: '', component_code: '', quantity: 0, unit: 'pcs', unit_price: 0, min_stock: 5, location: ''
   });
@@ -43,6 +46,38 @@ export default function Inventory() {
       old_values: null, new_values: null
     });
     loadItems();
+  };
+
+  const openAdjust = (item) => {
+    setAdjustItem(item);
+    setAdjustData({ quantity_change: 0, note: '' });
+    setShowAdjust(true);
+  };
+
+  const handleAdjust = async (e) => {
+    e.preventDefault();
+    if (adjustData.quantity_change === 0) {
+      alert('Vui lòng nhập số lượng thay đổi khác 0');
+      return;
+    }
+    const result = await window.api.adjustInventory({
+      component_code: adjustItem.component_code,
+      quantity_change: adjustData.quantity_change,
+      note: adjustData.note
+    });
+    if (result.success) {
+      await window.api.logAudit({
+        user_id: user.id, username: user.username,
+        action: adjustData.quantity_change > 0 ? 'MANUAL_ADD' : 'MANUAL_DEDUCT',
+        table_name: 'inventory', record_id: adjustItem.id,
+        old_values: JSON.stringify({ quantity: adjustItem.quantity }),
+        new_values: JSON.stringify({ quantity: adjustItem.quantity + adjustData.quantity_change })
+      });
+      setShowAdjust(false);
+      loadItems();
+    } else {
+      alert(result.message || 'Lỗi khi điều chỉnh');
+    }
   };
 
   const filtered = items.filter((item) =>
@@ -101,6 +136,7 @@ export default function Inventory() {
                   </td>
                   {canDelete() && (
                     <td>
+                      <button className="btn-icon" onClick={() => openAdjust(item)} title="Điều chỉnh tồn kho">⚖</button>
                       <button className="btn-icon btn-danger-icon" onClick={() => handleDelete(item.id)}>✕</button>
                     </td>
                   )}
@@ -135,6 +171,50 @@ export default function Inventory() {
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowAdd(false)}>Hủy</button>
                 <button type="submit" className="btn-primary">Lưu</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAdjust && adjustItem && (
+        <div className="modal-overlay" onClick={() => setShowAdjust(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Điều chỉnh tồn kho</h3>
+            <div style={{ marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 6 }}>
+              <div><strong>{adjustItem.component_name}</strong></div>
+              <div style={{ color: '#64748b', fontSize: 12 }}>Mã: {adjustItem.component_code}</div>
+              <div style={{ fontSize: 13 }}>Tồn kho hiện tại: <strong>{adjustItem.quantity}</strong> {adjustItem.unit}</div>
+            </div>
+            <form onSubmit={handleAdjust}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Thay đổi số lượng</label>
+                  <input
+                    type="number"
+                    value={adjustData.quantity_change}
+                    onChange={(e) => setAdjustData({ ...adjustData, quantity_change: parseInt(e.target.value) || 0 })}
+                    placeholder="Âm = giảm, Dương = tăng"
+                  />
+                  <small style={{ color: '#64748b' }}>Âm (-) để giảm tồn, Dương (+) để tăng tồn</small>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Ghi chú</label>
+                <input
+                  value={adjustData.note}
+                  onChange={(e) => setAdjustData({ ...adjustData, note: e.target.value })}
+                  placeholder="Lý do điều chỉnh..."
+                />
+              </div>
+              <div style={{ marginTop: 8, fontSize: 13 }}>
+                Tồn kho mới: <strong style={{ color: adjustItem.quantity + adjustData.quantity_change < 0 ? '#dc2626' : '#16a34a' }}>
+                  {adjustItem.quantity + adjustData.quantity_change}
+                </strong> {adjustItem.unit}
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowAdjust(false)}>Hủy</button>
+                <button type="submit" className="btn-primary">Xác nhận</button>
               </div>
             </form>
           </div>

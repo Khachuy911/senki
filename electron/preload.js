@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('api', {
   createInventoryItem: (data) => ipcRenderer.invoke('inventory:create', data),
   updateInventoryItem: (id, data) => ipcRenderer.invoke('inventory:update', id, data),
   deleteInventoryItem: (id) => ipcRenderer.invoke('inventory:delete', id),
+  adjustInventory: (data) => ipcRenderer.invoke('inventory:adjust', data),
+  getPendingReservations: () => ipcRenderer.invoke('inventory:getPendingReservations'),
 
   // Orders
   getOrders: () => ipcRenderer.invoke('orders:getAll'),
@@ -55,4 +57,10 @@ contextBridge.exposeInMainWorld('api', {
   createPurchases: (items) => ipcRenderer.invoke('purchasing:createMultiple', items),
   updatePurchase: (id, data) => ipcRenderer.invoke('purchasing:update', id, data),
   deletePurchase: (id) => ipcRenderer.invoke('purchasing:delete', id),
+
+  // Purchase Requests
+  getPurchaseRequests: () => ipcRenderer.invoke('purchase_requests:getAll'),
+  getPurchaseRequestsByProduct: (productId) => ipcRenderer.invoke('purchase_requests:getByProduct', productId),
+  deletePurchaseRequest: (id) => ipcRenderer.invoke('purchase_requests:delete', id),
+  updatePurchaseRequestStatus: (id, status) => ipcRenderer.invoke('purchase_requests:updateStatus', id, status),
 });
