@@ -58,7 +58,7 @@ export default function Purchasing() {
     'Vượt đơn':      { color: '#dc2626', bg: '#fee2e2', label: '⚠️ Vượt đơn — Khóa TT' },
   };
 
-  const getStage = (p) => {
+  const getStage = (p, isOverDelivery) => {
     if (p.payment_status === 'Đã thanh toán đủ') return 'Đã thanh toán';
     if (p.payment_status === 'Đã tạm ứng') return 'Đã tạm ứng';
     if (isOverDelivery) return 'Vượt đơn';
@@ -115,7 +115,7 @@ export default function Purchasing() {
                 const isEditing = editingId === p.id;
                 const isOverDelivery = p.actual_quantity > p.quantity;
                 const isFullDelivery = p.actual_quantity >= p.quantity && p.actual_quantity > 0;
-                const stage = getStage(p);
+                const stage = getStage(p, isOverDelivery);
                 const stageStyle = stageConfig[stage] || stageConfig['Chưa đặt'];
                 return (
                   <tr key={p.id}>
