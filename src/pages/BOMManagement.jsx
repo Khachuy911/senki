@@ -69,7 +69,7 @@ export default function BOMManagement() {
     }
     setNewProduct({ name: '', code: '', category: '' });
     setShowAddProduct(false);
-    loadProducts();
+    loadProductsWithBomCount();
   };
 
   const handleAddBom = async (e) => {
@@ -100,7 +100,13 @@ export default function BOMManagement() {
       setSelectedProduct(null);
       setBomItems([]);
     }
-    loadProducts();
+    loadProductsWithBomCount();
+  };
+
+  const editProduct = (product) => {
+    setNewProduct({ name: product.name, code: product.code, category: product.category || '' });
+    setEditingProductId(product.id);
+    setShowAddProduct(true);
   };
 
   const handleDeleteBom = async (id) => {
@@ -187,7 +193,7 @@ export default function BOMManagement() {
       }
     }
     alert(`Import thành công ${importedCount} sản phẩm từ "${result.fileName}"`);
-    loadProducts();
+    loadProductsWithBomCount();
   };
 
   const filteredProducts = products.filter((p) =>
@@ -234,13 +240,14 @@ export default function BOMManagement() {
                 >
                   <div className="product-name">{p.name} {p.code ? <span className="product-code">({p.code})</span> : null}</div>
                   <span className="bom-count">{bomCountMap[p.id] || 0} LK</span>
-                  {canDelete() && (
-                    <button
-                      className="btn-icon btn-danger-icon"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteProduct(p.id); }}
-                      title="Xóa"
-                    >✕</button>
-                  )}
+                  <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                    {canEdit() && (
+                      <button className="btn-icon" onClick={() => editProduct(p)} title="Sửa">✎</button>
+                    )}
+                    {canDelete() && (
+                      <button className="btn-icon btn-danger-icon" onClick={() => handleDeleteProduct(p.id)} title="Xóa">✕</button>
+                    )}
+                  </div>
                 </div>
               ))}
               {filteredProducts.length === 0 && (

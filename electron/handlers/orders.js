@@ -1,0 +1,68 @@
+function registerOrderHandlers(ipcMain, db) {
+  ipcMain.handle('orders:getAll', () => {
+    return db.prepare(`
+      SELECT o.*, p.name as product_name, p.code as product_code
+      FROM orders o LEFT JOIN products p ON o.product_id = p.id
+      ORDER BY o.id DESC
+    `).all();
+  });
+
+  ipcMain.handle('orders:create', (_, data) => {
+    try {
+      const result = db.prepare(
+        `INSERT INTO orders (order_code, customer_name, product_id, quantity, unit_price, total_price, status, order_date,
+          delivery_date, payment_deadline, assigned_to, note, delivered_quantity, vat_rate, vat_amount,
+          customer_phone, customer_email, customer_address, shipping_fee, discount)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        data.order_code, data.customer_name, data.product_id, data.quantity, data.unit_price || 0, data.total_price,
+        data.status, data.order_date, data.delivery_date, data.payment_deadline, data.assigned_to, data.note,
+        data.delivered_quantity || 0, data.vat_rate || 0.08, data.vat_amount || 0,
+        data.customer_phone || '', data.customer_email || '', data.customer_address || '', data.shipping_fee || 0, data.discount || 0
+      );
+      return { success: true, id: result.lastInsertRowid };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  });
+
+  ipcMain.handle('orders:update', (_, id, data) => {
+    const oldOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+    const oldStatus = oldOrder ? oldOrder.status : '';
+    const newStatus = data.status;
+
+    db.prepare(
+      `UPDATE orders SET order_code = ?, customer_name = ?, product_id = ?, quantity = ?, unit_price = ?, total_price = ?,
+        status = ?, order_date = ?, delivery_date = ?, payment_deadline = ?, assigned_to = ?, note = ?,
+        delivered_quantity = ?, vat_rate = ?, vat_amount = ?, customer_phone = ?, customer_email = ?,
+        customer_address = ?, shipping_fee = ?, discount = ? WHERE id = ?`
+    ).run(
+      data.order_code, data.customer_name, data.product_id, data.quantity, data.unit_price || 0, data.total_price,
+      data.status, data.order_date, data.delivery_date, data.payment_deadline, data.assigned_to, data.note,
+      data.delivered_quantity, data.vat_rate, data.vat_amount, data.customer_phone || '', data.customer_email || '',
+      data.customer_address || '', data.shipping_fee || 0, data.discount || 0, id
+    );
+
+    // If status changed to 'processing', deduct inventory
+    if (oldStatus !== 'processing' && newStatus === 'processing') {
+      const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(data.product_id);
+      for (const bom of bomItems) {
+        const deductQty = bom.quantity * data.quantity;
+        db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE component_code = ?')
+          .run(deductQty, bom.component_code);
+        db.prepare(
+          'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(bom.component_code, 'order_deduct', deductQty, id, 'order', `Đơn hàng ${data.order_code} - SX`);
+      }
+    }
+
+    return { success: true };
+  });
+
+  ipcMain.handle('orders:delete', (_, id) => {
+    db.prepare('DELETE FROM orders WHERE id = ?').run(id);
+    return { success: true };
+  });
+}
+
+module.exports = { registerOrderHandlers };
