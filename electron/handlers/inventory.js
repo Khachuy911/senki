@@ -5,6 +5,9 @@ function registerInventoryHandlers(ipcMain, db) {
 
   ipcMain.handle('inventory:create', (_, data) => {
     try {
+      if (!data.component_code || !data.component_code.trim()) {
+        return { success: false, message: 'Mã linh kiện là bắt buộc' };
+      }
       const result = db.prepare(
         'INSERT INTO inventory (component_name, component_code, quantity, unit, unit_price, min_stock, location) VALUES (?, ?, ?, ?, ?, ?, ?)'
       ).run(data.component_name, data.component_code, data.quantity, data.unit, data.unit_price, data.min_stock, data.location);
@@ -15,6 +18,9 @@ function registerInventoryHandlers(ipcMain, db) {
   });
 
   ipcMain.handle('inventory:update', (_, id, data) => {
+    if (!data.component_code || !data.component_code.trim()) {
+      return { success: false, message: 'Mã linh kiện là bắt buộc' };
+    }
     db.prepare(
       'UPDATE inventory SET component_name = ?, component_code = ?, quantity = ?, unit = ?, unit_price = ?, min_stock = ?, location = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
     ).run(data.component_name, data.component_code, data.quantity, data.unit, data.unit_price, data.min_stock, data.location, id);
@@ -28,6 +34,17 @@ function registerInventoryHandlers(ipcMain, db) {
 
   ipcMain.handle('inventory:adjust', (_, data) => {
     try {
+      if (!data.component_code || !data.component_code.trim()) {
+        return { success: false, message: 'Mã linh kiện là bắt buộc' };
+      }
+      const current = db.prepare('SELECT quantity FROM inventory WHERE component_code = ?').get(data.component_code);
+      if (!current) {
+        return { success: false, message: 'Linh kiện không tồn tại trong kho' };
+      }
+      const newQty = current.quantity + data.quantity_change;
+      if (newQty < 0) {
+        return { success: false, message: 'Số lượng tồn kho không đủ (hiện tại: ' + current.quantity + ')' };
+      }
       db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
         .run(data.quantity_change, data.component_code);
       const type = data.quantity_change > 0 ? 'manual_add' : 'manual_deduct';

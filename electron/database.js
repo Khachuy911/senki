@@ -161,6 +161,22 @@ function initDatabase(app) {
       status TEXT DEFAULT 'pending',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS components (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      component_name TEXT NOT NULL,
+      component_code TEXT UNIQUE NOT NULL,
+      unit TEXT DEFAULT 'pcs',
+      unit_price REAL DEFAULT 0,
+      material TEXT,
+      specification TEXT,
+      color TEXT,
+      identifying_features TEXT,
+      pic_standard TEXT,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Upgrade existing orders table

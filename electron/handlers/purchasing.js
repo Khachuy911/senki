@@ -67,11 +67,22 @@ function registerPurchasingHandlers(ipcMain, db) {
 
     const qtyDiff = newActualQty - oldActualQty;
     if (qtyDiff > 0 && oldPurchase) {
-      db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
-        .run(qtyDiff, oldPurchase.component_code);
-      db.prepare(
-        'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(oldPurchase.component_code, 'purchase_add', qtyDiff, id, 'purchase', `Nhận hàng từ PO`);
+      // Get reserved quantity for this purchase to determine excess
+      const reservation = db.prepare(
+        "SELECT quantity as reserved_qty FROM purchase_reservations WHERE purchase_id = ? AND status = 'pending'"
+      ).get(id);
+
+      const reservedQty = reservation?.reserved_qty || 0;
+      // Only add excess (received - reserved) to inventory, not the full received amount
+      const excessQty = Math.max(0, newActualQty - reservedQty);
+
+      if (excessQty > 0) {
+        db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
+          .run(excessQty, oldPurchase.component_code);
+        db.prepare(
+          'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(oldPurchase.component_code, 'purchase_add', excessQty, id, 'purchase', `Nhận hàng từ PO (thừa ${excessQty})`);
+      }
       db.prepare(
         "UPDATE purchase_reservations SET status = 'received' WHERE purchase_id = ? AND status = 'pending'"
       ).run(id);

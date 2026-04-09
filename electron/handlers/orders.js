@@ -9,6 +9,7 @@ function registerOrderHandlers(ipcMain, db) {
 
   ipcMain.handle('orders:create', (_, data) => {
     try {
+      // Insert order first to get the ID
       const result = db.prepare(
         `INSERT INTO orders (order_code, customer_name, product_id, quantity, unit_price, total_price, status, order_date,
           delivery_date, payment_deadline, assigned_to, note, delivered_quantity, vat_rate, vat_amount,
@@ -20,7 +21,28 @@ function registerOrderHandlers(ipcMain, db) {
         data.delivered_quantity || 0, data.vat_rate || 0.08, data.vat_amount || 0,
         data.customer_phone || '', data.customer_email || '', data.customer_address || '', data.shipping_fee || 0, data.discount || 0
       );
-      return { success: true, id: result.lastInsertRowid };
+      const orderId = result.lastInsertRowid;
+
+      // If creating order with 'processing' status, deduct inventory after insert
+      if (data.status === 'processing') {
+        const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(data.product_id);
+        for (const bom of bomItems) {
+          const neededQty = bom.quantity * data.quantity;
+          const stock = db.prepare('SELECT quantity FROM inventory WHERE component_code = ?').get(bom.component_code);
+          const availableStock = stock?.quantity || 0;
+          // Chi tru so luong thuc te co trong kho
+          const deductQty = Math.min(neededQty, availableStock);
+          if (deductQty > 0) {
+            db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE component_code = ?')
+              .run(deductQty, bom.component_code);
+            db.prepare(
+              'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+            ).run(bom.component_code, 'order_deduct', deductQty, orderId, 'order', `Đơn hàng ${data.order_code} - SX`);
+          }
+        }
+      }
+
+      return { success: true, id: orderId };
     } catch (e) {
       return { success: false, message: e.message };
     }
@@ -47,12 +69,18 @@ function registerOrderHandlers(ipcMain, db) {
     if (oldStatus !== 'processing' && newStatus === 'processing') {
       const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(data.product_id);
       for (const bom of bomItems) {
-        const deductQty = bom.quantity * data.quantity;
-        db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE component_code = ?')
-          .run(deductQty, bom.component_code);
-        db.prepare(
-          'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(bom.component_code, 'order_deduct', deductQty, id, 'order', `Đơn hàng ${data.order_code} - SX`);
+        const neededQty = bom.quantity * data.quantity;
+        const stock = db.prepare('SELECT quantity FROM inventory WHERE component_code = ?').get(bom.component_code);
+        const availableStock = stock?.quantity || 0;
+        // Chi tru so luong thuc te co trong kho
+        const deductQty = Math.min(neededQty, availableStock);
+        if (deductQty > 0) {
+          db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE component_code = ?')
+            .run(deductQty, bom.component_code);
+          db.prepare(
+            'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+          ).run(bom.component_code, 'order_deduct', deductQty, id, 'order', `Đơn hàng ${data.order_code} - SX`);
+        }
       }
     }
 
@@ -60,6 +88,19 @@ function registerOrderHandlers(ipcMain, db) {
   });
 
   ipcMain.handle('orders:delete', (_, id) => {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+    if (order && order.status === 'processing') {
+      // Restore inventory
+      const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(order.product_id);
+      for (const bom of bomItems) {
+        const restoreQty = bom.quantity * order.quantity;
+        db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
+          .run(restoreQty, bom.component_code);
+        db.prepare(
+          'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(bom.component_code, 'manual_add', restoreQty, id, 'order', `Hoàn hàng ${order.order_code}`);
+      }
+    }
     db.prepare('DELETE FROM orders WHERE id = ?').run(id);
     return { success: true };
   });

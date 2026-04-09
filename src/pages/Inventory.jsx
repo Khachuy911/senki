@@ -157,7 +157,7 @@ export default function Inventory() {
             <form onSubmit={handleAdd}>
               <div className="form-row">
                 <div className="form-group"><label>Tên linh kiện</label><input required value={newItem.component_name} onChange={(e) => setNewItem({ ...newItem, component_name: e.target.value })} /></div>
-                <div className="form-group"><label>Mã</label><input value={newItem.component_code} onChange={(e) => setNewItem({ ...newItem, component_code: e.target.value })} /></div>
+                <div className="form-group"><label>Mã <span style={{color:'red'}}>*</span></label><input required value={newItem.component_code} onChange={(e) => setNewItem({ ...newItem, component_code: e.target.value })} placeholder="Bắt buộc" /></div>
               </div>
               <div className="form-row">
                 <div className="form-group"><label>Số lượng</label><input type="number" min="0" value={newItem.quantity} onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })} /></div>

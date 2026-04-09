@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld('api', {
   updateBomItem: (id, data) => ipcRenderer.invoke('bom:update', id, data),
   deleteBomItem: (id) => ipcRenderer.invoke('bom:delete', id),
 
+  // Components (Master list of components)
+  getComponents: () => ipcRenderer.invoke('components:getAll'),
+  createComponent: (data) => ipcRenderer.invoke('components:create', data),
+  updateComponent: (id, data) => ipcRenderer.invoke('components:update', id, data),
+  deleteComponent: (id) => ipcRenderer.invoke('components:delete', id),
+
   // Inventory
   getInventory: () => ipcRenderer.invoke('inventory:getAll'),
   createInventoryItem: (data) => ipcRenderer.invoke('inventory:create', data),

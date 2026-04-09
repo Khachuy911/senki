@@ -17,6 +17,16 @@ export default function Purchasing() {
     setPurchases(data);
   };
 
+  // Group purchases by request code (extracted from note field)
+  const groupedPurchases = purchases.reduce((groups, p) => {
+    // Extract PR code from note like "PR: PR-2026-0001"
+    const match = p.note?.match(/PR:\s*(PR-\d{4}-\d+)/);
+    const prCode = match ? match[1] : 'Khác';
+    if (!groups[prCode]) groups[prCode] = [];
+    groups[prCode].push(p);
+    return groups;
+  }, {});
+
   const startEdit = (item) => {
     setEditingId(item.id);
     setEditData({ ...item });
@@ -111,122 +121,131 @@ export default function Purchasing() {
               </tr>
             </thead>
             <tbody>
-              {purchases.map(p => {
-                const isEditing = editingId === p.id;
-                const isOverDelivery = p.actual_quantity > p.quantity;
-                const isFullDelivery = p.actual_quantity >= p.quantity && p.actual_quantity > 0;
-                const stage = getStage(p, isOverDelivery);
-                const stageStyle = stageConfig[stage] || stageConfig['Chưa đặt'];
-                return (
-                  <tr key={p.id}>
-                    <td>
-                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{p.component_name}</div>
+              {Object.entries(groupedPurchases).map(([prCode, items]) => (
+                <>
+                  <tr key={`header-${prCode}`} style={{ background: '#f1f5f9' }}>
+                    <td colSpan="11" style={{ fontWeight: 700, color: '#2563eb', padding: '8px 12px' }}>
+                      📋 {prCode} — {items.length} linh kiện
                     </td>
-                    <td>
-                      <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>{p.component_code || '—'}</span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <span style={{ fontWeight: 700, color: '#dc2626' }}>{p.quantity}</span>
-                      <span style={{ color: '#64748b', marginLeft: 2 }}>{p.unit}</span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {isEditing ? (
-                        <input type="number" className="qty-input" value={editData.actual_quantity || 0} onChange={e => setEditData({...editData, actual_quantity: parseInt(e.target.value) || 0})} />
-                      ) : (
-                        <span>
-                          <strong style={{
-                            color: isOverDelivery ? '#dc2626' : (isFullDelivery ? '#16a34a' : (p.actual_quantity > 0 ? '#d97706' : '#94a3b8'))
-                          }}>
-                            {p.actual_quantity || 0}
-                          </strong>
-                          {isOverDelivery && (
-                            <span style={{ fontSize: 11, color: '#dc2626', marginLeft: 4 }}>+{p.actual_quantity - p.quantity} thừa</span>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input type="date" className="qty-input" value={editData.expected_date ? editData.expected_date.split('T')[0] : ''} onChange={e => setEditData({...editData, expected_date: e.target.value})} />
-                      ) : (
-                        <span style={{ color: p.expected_date ? '#1e293b' : '#94a3b8' }}>
-                          {p.expected_date ? p.expected_date.substring(0, 10) : '—'}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input className="qty-input" style={{ width: 90 }} value={editData.pic || ''} onChange={e => setEditData({...editData, pic: e.target.value})} />
-                      ) : (
-                        <span style={{ color: p.pic ? '#1e293b' : '#94a3b8' }}>{p.pic || '—'}</span>
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input className="qty-input" style={{ width: 90 }} value={editData.contract_no || ''} onChange={e => setEditData({...editData, contract_no: e.target.value})} />
-                      ) : (
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: p.contract_no ? '#2563eb' : '#94a3b8' }}>{p.contract_no || '—'}</span>
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        isOverDelivery ? (
-                          <span style={{ fontSize: 11, color: '#dc2626', fontStyle: 'italic' }}>Chờ xử lý vượt đơn</span>
-                        ) : (
-                          <select className="qty-input" style={{ width: 120 }} value={editData.payment_status || 'Chưa thanh toán'} onChange={e => setEditData({...editData, payment_status: e.target.value})}>
-                            <option value="Chưa thanh toán">Chưa TT</option>
-                            <option value="Đã tạm ứng">Tạm ứng</option>
-                            <option value="Đã thanh toán đủ">Đã xong</option>
-                          </select>
-                        )
-                      ) : (
-                        isOverDelivery ? (
-                          <span style={{ fontSize: 11, color: '#dc2626', fontStyle: 'italic' }}>Chờ xử lý vượt đơn</span>
-                        ) : (
-                          <span style={{
-                            color: p.payment_status === 'Đã thanh toán đủ' ? '#16a34a' : (p.payment_status === 'Đã tạm ứng' ? '#d97706' : '#dc2626'),
-                            fontWeight: 600, fontSize: 12
-                          }}>
-                            {p.payment_status || 'Chưa thanh toán'}
-                          </span>
-                        )
-                      )}
-                    </td>
-                    <td>
-                      <span style={{
-                        display: 'inline-block', padding: '3px 8px', borderRadius: 12, fontSize: 11,
-                        color: stageStyle.color, background: stageStyle.bg, fontWeight: 600
-                      }}>
-                        {stageStyle.label}
-                      </span>
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input className="qty-input" style={{ width: 80 }} value={editData.note || ''} onChange={e => setEditData({...editData, note: e.target.value})} />
-                      ) : (
-                        <span style={{ color: '#64748b', fontSize: 12 }}>{p.note || '—'}</span>
-                      )}
-                    </td>
-                    {canEdit() && (
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {isEditing ? (
-                            <>
-                              <button className="btn-icon btn-success-icon" onClick={() => handleSave(p.id)} title="Lưu">✓</button>
-                              <button className="btn-icon" onClick={() => setEditingId(null)} title="Hủy">✕</button>
-                            </>
-                          ) : (
-                            <>
-                              <button className="btn-icon btn-edit-icon" onClick={() => startEdit(p)} title="Sửa">✎</button>
-                              {canDelete() && <button className="btn-icon btn-danger-icon" onClick={() => handleDeletePurchase(p.id)} title="Xóa">✕</button>}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    )}
                   </tr>
-                );
-              })}
+                  {items.map(p => {
+                    const isEditing = editingId === p.id;
+                    const isOverDelivery = p.actual_quantity > p.quantity;
+                    const isFullDelivery = p.actual_quantity >= p.quantity && p.actual_quantity > 0;
+                    const stage = getStage(p, isOverDelivery);
+                    const stageStyle = stageConfig[stage] || stageConfig['Chưa đặt'];
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <div style={{ fontWeight: 600, color: '#1e293b' }}>{p.component_name}</div>
+                        </td>
+                        <td>
+                          <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>{p.component_code || '—'}</span>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span style={{ fontWeight: 700, color: '#dc2626' }}>{p.quantity}</span>
+                          <span style={{ color: '#64748b', marginLeft: 2 }}>{p.unit}</span>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          {isEditing ? (
+                            <input type="number" className="qty-input" value={editData.actual_quantity || 0} onChange={e => setEditData({...editData, actual_quantity: parseInt(e.target.value) || 0})} />
+                          ) : (
+                            <span>
+                              <strong style={{
+                                color: isOverDelivery ? '#dc2626' : (isFullDelivery ? '#16a34a' : (p.actual_quantity > 0 ? '#d97706' : '#94a3b8'))
+                              }}>
+                                {p.actual_quantity || 0}
+                              </strong>
+                              {isOverDelivery && (
+                                <span style={{ fontSize: 11, color: '#dc2626', marginLeft: 4 }}>+{p.actual_quantity - p.quantity} thừa</span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input type="date" className="qty-input" value={editData.expected_date ? editData.expected_date.split('T')[0] : ''} onChange={e => setEditData({...editData, expected_date: e.target.value})} />
+                          ) : (
+                            <span style={{ color: p.expected_date ? '#1e293b' : '#94a3b8' }}>
+                              {p.expected_date ? p.expected_date.substring(0, 10) : '—'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input className="qty-input" style={{ width: 90 }} value={editData.pic || ''} onChange={e => setEditData({...editData, pic: e.target.value})} />
+                          ) : (
+                            <span style={{ color: p.pic ? '#1e293b' : '#94a3b8' }}>{p.pic || '—'}</span>
+                          )}
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input className="qty-input" style={{ width: 90 }} value={editData.contract_no || ''} onChange={e => setEditData({...editData, contract_no: e.target.value})} />
+                          ) : (
+                            <span style={{ fontFamily: 'monospace', fontSize: 12, color: p.contract_no ? '#2563eb' : '#94a3b8' }}>{p.contract_no || '—'}</span>
+                          )}
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            isOverDelivery ? (
+                              <span style={{ fontSize: 11, color: '#dc2626', fontStyle: 'italic' }}>Chờ xử lý vượt đơn</span>
+                            ) : (
+                              <select className="qty-input" style={{ width: 120 }} value={editData.payment_status || 'Chưa thanh toán'} onChange={e => setEditData({...editData, payment_status: e.target.value})}>
+                                <option value="Chưa thanh toán">Chưa TT</option>
+                                <option value="Đã tạm ứng">Tạm ứng</option>
+                                <option value="Đã thanh toán đủ">Đã xong</option>
+                              </select>
+                            )
+                          ) : (
+                            isOverDelivery ? (
+                              <span style={{ fontSize: 11, color: '#dc2626', fontStyle: 'italic' }}>Chờ xử lý vượt đơn</span>
+                            ) : (
+                              <span style={{
+                                color: p.payment_status === 'Đã thanh toán đủ' ? '#16a34a' : (p.payment_status === 'Đã tạm ứng' ? '#d97706' : '#dc2626'),
+                                fontWeight: 600, fontSize: 12
+                              }}>
+                                {p.payment_status || 'Chưa thanh toán'}
+                              </span>
+                            )
+                          )}
+                        </td>
+                        <td>
+                          <span style={{
+                            display: 'inline-block', padding: '3px 8px', borderRadius: 12, fontSize: 11,
+                            color: stageStyle.color, background: stageStyle.bg, fontWeight: 600
+                          }}>
+                            {stageStyle.label}
+                          </span>
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input className="qty-input" style={{ width: 80 }} value={editData.note || ''} onChange={e => setEditData({...editData, note: e.target.value})} />
+                          ) : (
+                            <span style={{ color: '#64748b', fontSize: 12 }}>{p.note || '—'}</span>
+                          )}
+                        </td>
+                        {canEdit() && (
+                          <td>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {isEditing ? (
+                                <>
+                                  <button className="btn-icon btn-success-icon" onClick={() => handleSave(p.id)} title="Lưu">✓</button>
+                                  <button className="btn-icon" onClick={() => setEditingId(null)} title="Hủy">✕</button>
+                                </>
+                              ) : (
+                                <>
+                                  <button className="btn-icon btn-edit-icon" onClick={() => startEdit(p)} title="Sửa">✎</button>
+                                  {canDelete() && <button className="btn-icon btn-danger-icon" onClick={() => handleDeletePurchase(p.id)} title="Xóa">✕</button>}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </>
+              ))}
               {purchases.length === 0 && (
                 <tr><td colSpan="11" className="empty-state">Chưa có đơn mua hàng nào</td></tr>
               )}

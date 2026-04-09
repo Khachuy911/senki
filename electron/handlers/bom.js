@@ -5,6 +5,9 @@ function registerBomHandlers(ipcMain, db) {
 
   ipcMain.handle('bom:create', (_, data) => {
     try {
+      if (!data.component_code || !data.component_code.trim()) {
+        return { success: false, message: 'Mã linh kiện là bắt buộc' };
+      }
       const result = db.prepare(
         `INSERT INTO bom_items (product_id, component_name, component_code, quantity, unit, unit_price, vat_rate, note,
           material, specification, color, identifying_features, pic_standard, contract_no, payment_status, order_date, needed_date)
@@ -22,6 +25,9 @@ function registerBomHandlers(ipcMain, db) {
   });
 
   ipcMain.handle('bom:update', (_, id, data) => {
+    if (!data.component_code || !data.component_code.trim()) {
+      return { success: false, message: 'Mã linh kiện là bắt buộc' };
+    }
     db.prepare(
       `UPDATE bom_items SET component_name = ?, component_code = ?, quantity = ?, unit = ?, unit_price = ?, vat_rate = ?, note = ?,
         material = ?, specification = ?, color = ?, identifying_features = ?, pic_standard = ?, contract_no = ?,
