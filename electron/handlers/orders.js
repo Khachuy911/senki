@@ -84,6 +84,19 @@ function registerOrderHandlers(ipcMain, db) {
       }
     }
 
+    // If status changed from 'processing' to 'cancelled', restore inventory
+    if (oldStatus === 'processing' && newStatus === 'cancelled') {
+      const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(data.product_id);
+      for (const bom of bomItems) {
+        const restoreQty = bom.quantity * data.quantity;
+        db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
+          .run(restoreQty, bom.component_code);
+        db.prepare(
+          'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(bom.component_code, 'order_cancelled', restoreQty, id, 'order', `Hủy đơn ${data.order_code} - Hoàn hàng`);
+      }
+    }
+
     return { success: true };
   });
 

@@ -7,7 +7,6 @@ import Orders from '../pages/Orders';
 import AuditLog from '../pages/AuditLog';
 import UserManagement from '../pages/UserManagement';
 import ProductionPlanning from '../pages/ProductionPlanning';
-
 import Purchasing from '../pages/Purchasing';
 
 const NAV_ITEMS = [
@@ -15,14 +14,21 @@ const NAV_ITEMS = [
   { id: 'orders', label: 'Đơn hàng', icon: '🛒' },
   { id: 'planning', label: 'Kế hoạch', icon: '⚙️' },
   { id: 'purchasing', label: 'Mua hàng', icon: '🛒' },
-  { id: 'bom', label: 'BOM', icon: '📋' },
+  { id: 'bom', label: 'BOM', icon: '📋', hasSubmenu: true },
   { id: 'inventory', label: 'Kho', icon: '📦' },
   { id: 'audit', label: 'Lịch sử', icon: '📝' },
   { id: 'users', label: 'Người dùng', icon: '👥', adminOnly: true },
 ];
 
+const BOM_SUBMENU = [
+  { id: 'products', label: 'Sản phẩm', icon: '📦' },
+  { id: 'components', label: 'Linh kiện', icon: '🔧' },
+];
+
 export default function Layout() {
   const [activePage, setActivePage] = useState('dashboard');
+  const [bomSubmenu, setBomSubmenu] = useState('products');
+  const [bomExpanded, setBomExpanded] = useState(true);
   const { user, logout, canManageUsers } = useAuth();
 
   const filteredNav = NAV_ITEMS.filter(
@@ -32,7 +38,7 @@ export default function Layout() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard': return <Dashboard />;
-      case 'bom': return <BOMManagement />;
+      case 'bom': return <BOMManagement defaultTab={bomSubmenu} hideTabs />;
       case 'inventory': return <Inventory />;
       case 'orders': return <Orders />;
       case 'planning': return <ProductionPlanning />;
@@ -59,14 +65,42 @@ export default function Layout() {
 
         <nav className="sidebar-nav">
           {filteredNav.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-item ${activePage === item.id ? 'active' : ''}`}
-              onClick={() => setActivePage(item.id)}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              <span className="nav-label">{item.label}</span>
-            </button>
+            <div key={item.id} className="nav-group">
+              <button
+                className={`nav-item ${activePage === item.id ? 'active' : ''} ${item.hasSubmenu ? 'has-submenu' : ''}`}
+                onClick={() => {
+                  if (item.hasSubmenu) {
+                    setBomExpanded(!bomExpanded);
+                  } else {
+                    setActivePage(item.id);
+                  }
+                }}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-label">{item.label}</span>
+                {item.hasSubmenu && (
+                  <span className="nav-arrow">{bomExpanded ? '▼' : '▶'}</span>
+                )}
+              </button>
+
+              {item.hasSubmenu && bomExpanded && (
+                <div className="submenu">
+                  {BOM_SUBMENU.map((sub) => (
+                    <button
+                      key={sub.id}
+                      className={`submenu-item ${activePage === 'bom' && bomSubmenu === sub.id ? 'active' : ''}`}
+                      onClick={() => {
+                        setBomSubmenu(sub.id);
+                        setActivePage('bom');
+                      }}
+                    >
+                      <span className="nav-icon">{sub.icon}</span>
+                      <span className="nav-label">{sub.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </nav>
 

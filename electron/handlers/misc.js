@@ -54,19 +54,22 @@ function registerMiscHandlers(ipcMain, db) {
     }
   });
 
-  // Clear All Data
+  // Clear All Data (except components)
   ipcMain.handle('data:clearAll', () => {
     try {
       if (!db) return { success: false, message: 'Database not initialized' };
       db.exec('DELETE FROM purchase_request_items');
       db.exec('DELETE FROM purchase_requests');
+      db.exec('DELETE FROM purchase_reservations');
       db.exec('DELETE FROM purchasing');
-      db.exec('DELETE FROM orders');
+      db.exec('DELETE FROM inventory_transactions');
       db.exec('DELETE FROM inventory');
+      db.exec('DELETE FROM orders');
       db.exec('DELETE FROM bom_items');
       db.exec('DELETE FROM products');
       db.exec('DELETE FROM audit_logs');
-      return { success: true, message: 'Đã xóa toàn bộ dữ liệu' };
+      // KEEP components table intact
+      return { success: true, message: 'Đã xóa toàn bộ dữ liệu (giữ lại linh kiện)' };
     } catch (e) {
       return { success: false, message: e.message };
     }

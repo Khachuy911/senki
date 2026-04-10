@@ -4,16 +4,24 @@ import { useAuth } from '../context/AuthContext';
 export default function Inventory() {
   const { user, canEdit, canDelete } = useAuth();
   const [items, setItems] = useState([]);
+  const [components, setComponents] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
   const [adjustItem, setAdjustItem] = useState(null);
   const [adjustData, setAdjustData] = useState({ quantity_change: 0, note: '' });
+  const [componentSearch, setComponentSearch] = useState('');
   const [newItem, setNewItem] = useState({
-    component_name: '', component_code: '', quantity: 0, unit: 'pcs', unit_price: 0, min_stock: 5, location: ''
+    component_name: '', component_code: '', quantity: 0, unit: 'pcs', min_stock: 5, location: ''
   });
 
   useEffect(() => { loadItems(); }, []);
+  useEffect(() => { if (showAdd) loadComponents(); }, [showAdd]);
+
+  const loadComponents = async () => {
+    const data = await window.api.getComponents();
+    setComponents(data);
+  };
 
   const loadItems = async () => {
     const data = await window.api.getInventory();
@@ -29,7 +37,7 @@ export default function Inventory() {
         action: 'CREATE', table_name: 'inventory', record_id: result.id,
         old_values: null, new_values: JSON.stringify(newItem)
       });
-      setNewItem({ component_name: '', component_code: '', quantity: 0, unit: 'pcs', unit_price: 0, min_stock: 5, location: '' });
+      setNewItem({ component_name: '', component_code: '', quantity: 0, unit: 'pcs', min_stock: 5, location: '' });
       setShowAdd(false);
       loadItems();
     } else {
@@ -111,7 +119,6 @@ export default function Inventory() {
                 <th>Mã</th>
                 <th>Số lượng</th>
                 <th>ĐVT</th>
-                <th>Đơn giá</th>
                 <th>Tồn tối thiểu</th>
                 <th>Vị trí</th>
                 <th>Trạng thái</th>
@@ -126,7 +133,6 @@ export default function Inventory() {
                   <td>{item.component_code}</td>
                   <td>{item.quantity}</td>
                   <td>{item.unit}</td>
-                  <td className="text-right">{formatCurrency(item.unit_price)}</td>
                   <td>{item.min_stock}</td>
                   <td>{item.location}</td>
                   <td>
@@ -151,28 +157,80 @@ export default function Inventory() {
       </div>
 
       {showAdd && (
-        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => { setShowAdd(false); setComponentSearch(''); setNewItem({ component_name: '', component_code: '', quantity: 0, unit: 'pcs', unit_price: 0, min_stock: 5, location: '' }); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
             <h3>Thêm linh kiện vào kho</h3>
-            <form onSubmit={handleAdd}>
-              <div className="form-row">
-                <div className="form-group"><label>Tên linh kiện</label><input required value={newItem.component_name} onChange={(e) => setNewItem({ ...newItem, component_name: e.target.value })} /></div>
-                <div className="form-group"><label>Mã <span style={{color:'red'}}>*</span></label><input required value={newItem.component_code} onChange={(e) => setNewItem({ ...newItem, component_code: e.target.value })} placeholder="Bắt buộc" /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>Số lượng</label><input type="number" min="0" value={newItem.quantity} onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })} /></div>
-                <div className="form-group"><label>ĐVT</label><input value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>Đơn giá</label><input type="number" min="0" value={newItem.unit_price} onChange={(e) => setNewItem({ ...newItem, unit_price: parseFloat(e.target.value) })} /></div>
-                <div className="form-group"><label>Tồn tối thiểu</label><input type="number" min="0" value={newItem.min_stock} onChange={(e) => setNewItem({ ...newItem, min_stock: parseInt(e.target.value) })} /></div>
-              </div>
-              <div className="form-group"><label>Vị trí kho</label><input value={newItem.location} onChange={(e) => setNewItem({ ...newItem, location: e.target.value })} /></div>
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setShowAdd(false)}>Hủy</button>
-                <button type="submit" className="btn-primary">Lưu</button>
-              </div>
-            </form>
+
+            {/* Chon linh kien tu list */}
+            {!newItem.component_code ? (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <input
+                    type="text"
+                    placeholder="Tìm linh kiện theo tên hoặc mã..."
+                    value={componentSearch}
+                    onChange={(e) => setComponentSearch(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: 6 }}
+                  />
+                </div>
+                <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 8, marginBottom: 16 }}>
+                  {components.filter(c =>
+                    !items.some(i => i.component_code === c.component_code) &&
+                    (c.component_name.toLowerCase().includes(componentSearch.toLowerCase()) ||
+                    (c.component_code && c.component_code.toLowerCase().includes(componentSearch.toLowerCase())))
+                  ).length === 0 ? (
+                    <div style={{ padding: 16, textAlign: 'center', color: '#64748b' }}>
+                      {components.length === 0 ? 'Chưa có linh kiện nào. Hãy thêm trong tab "Linh kiện".' : 'Không tìm thấy linh kiện'}
+                    </div>
+                  ) : (
+                    components.filter(c =>
+                      !items.some(i => i.component_code === c.component_code) &&
+                      (c.component_name.toLowerCase().includes(componentSearch.toLowerCase()) ||
+                      (c.component_code && c.component_code.toLowerCase().includes(componentSearch.toLowerCase())))
+                    ).map(c => (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          setNewItem({
+                            ...newItem,
+                            component_name: c.component_name,
+                            component_code: c.component_code,
+                            unit: c.unit || 'pcs'
+                          });
+                          setComponentSearch('');
+                        }}
+                        style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = ''}
+                      >
+                        <strong>{c.component_name}</strong>
+                        <span style={{ marginLeft: 8, fontFamily: 'monospace', color: '#2563eb', fontSize: 12 }}>{c.component_code}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div style={{ textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+                  Chọn linh kiện từ danh sách hoặc đóng modal để nhập thủ công
+                </div>
+              </>
+            ) : (
+              <form onSubmit={handleAdd}>
+                <div style={{ marginBottom: 16, padding: 12, background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                  <div style={{ fontWeight: 600, color: '#166534' }}>✓ Đã chọn: {newItem.component_name}</div>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>Mã: {newItem.component_code} | Đơn vị: {newItem.unit}</div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Số lượng</label><input type="number" min="0" value={newItem.quantity} onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })} /></div>
+                  <div className="form-group"><label>Tồn tối thiểu</label><input type="number" min="0" value={newItem.min_stock} onChange={(e) => setNewItem({ ...newItem, min_stock: parseInt(e.target.value) })} /></div>
+                </div>
+                <div className="form-group"><label>Vị trí kho</label><input value={newItem.location} onChange={(e) => setNewItem({ ...newItem, location: e.target.value })} /></div>
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => { setNewItem({ component_name: '', component_code: '', quantity: 0, unit: 'pcs', unit_price: 0, min_stock: 5, location: '' }); }}>Chọn lại</button>
+                  <button type="button" className="btn-secondary" onClick={() => { setShowAdd(false); setComponentSearch(''); setNewItem({ component_name: '', component_code: '', quantity: 0, unit: 'pcs', unit_price: 0, min_stock: 5, location: '' }); }}>Hủy</button>
+                  <button type="submit" className="btn-primary">Lưu</button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

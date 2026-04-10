@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-export default function BOMManagement() {
+export default function BOMManagement({ defaultTab = 'products', hideTabs = false }) {
   const { user, canEdit, canDelete } = useAuth();
-  const [activeTab, setActiveTab] = useState('products'); // 'products' or 'components'
+  const [activeTab, setActiveTab] = useState(defaultTab); // 'products' or 'components'
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [bomItems, setBomItems] = useState([]);
@@ -16,10 +16,10 @@ export default function BOMManagement() {
   const [copySourceId, setCopySourceId] = useState('');
   const [showEditBom, setShowEditBom] = useState(false);
   const [editBom, setEditBom] = useState(null);
-  const [newProduct, setNewProduct] = useState({ name: '', code: '', category: '' });
+  const [newProduct, setNewProduct] = useState({ name: '', code: '' });
   const [newBom, setNewBom] = useState({
     component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '',
-    material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '', needed_date: ''
+    material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: ''
   });
 
   // Component state
@@ -27,11 +27,15 @@ export default function BOMManagement() {
   const [showAddComponent, setShowAddComponent] = useState(false);
   const [editingComponentId, setEditingComponentId] = useState(null);
   const [newComponent, setNewComponent] = useState({
-    component_name: '', component_code: '', unit: 'pcs', unit_price: 0,
+    component_name: '', component_code: '', unit: 'pcs',
     material: '', specification: '', color: '', identifying_features: '', pic_standard: '', note: ''
   });
   // BOM add modal - component search
   const [bomComponentSearch, setBomComponentSearch] = useState('');
+
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
 
   useEffect(() => { loadProductsWithBomCount(); }, []);
   useEffect(() => { if (activeTab === 'components') loadComponents(); }, [activeTab]);
@@ -67,7 +71,7 @@ export default function BOMManagement() {
         action: 'CREATE', table_name: 'components', record_id: result.id,
         old_values: null, new_values: JSON.stringify(newComponent)
       });
-      setNewComponent({ component_name: '', component_code: '', unit: 'pcs', unit_price: 0, material: '', specification: '', color: '', identifying_features: '', pic_standard: '', note: '' });
+      setNewComponent({ component_name: '', component_code: '', unit: 'pcs', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', note: '' });
       setShowAddComponent(false);
       loadComponents();
     } else {
@@ -85,7 +89,7 @@ export default function BOMManagement() {
         old_values: null, new_values: JSON.stringify(newComponent)
       });
       setEditingComponentId(null);
-      setNewComponent({ component_name: '', component_code: '', unit: 'pcs', unit_price: 0, material: '', specification: '', color: '', identifying_features: '', pic_standard: '', note: '' });
+      setNewComponent({ component_name: '', component_code: '', unit: 'pcs', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', note: '' });
       loadComponents();
     } else {
       alert(result.message || 'Lỗi khi cập nhật linh kiện');
@@ -108,7 +112,6 @@ export default function BOMManagement() {
       component_name: comp.component_name,
       component_code: comp.component_code,
       unit: comp.unit || 'pcs',
-      unit_price: comp.unit_price || 0,
       material: comp.material || '',
       specification: comp.specification || '',
       color: comp.color || '',
@@ -147,7 +150,7 @@ export default function BOMManagement() {
         });
       }
     }
-    setNewProduct({ name: '', code: '', category: '' });
+    setNewProduct({ name: '', code: '' });
     setShowAddProduct(false);
     loadProductsWithBomCount();
   };
@@ -162,7 +165,7 @@ export default function BOMManagement() {
         action: 'CREATE', table_name: 'bom_items', record_id: result.id,
         old_values: null, new_values: JSON.stringify(data)
       });
-      setNewBom({ component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '', needed_date: '' });
+      setNewBom({ component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '' });
       setShowAddBom(false);
       loadBom(selectedProduct.id);
     }
@@ -184,7 +187,7 @@ export default function BOMManagement() {
   };
 
   const editProduct = (product) => {
-    setNewProduct({ name: product.name, code: product.code, category: product.category || '' });
+    setNewProduct({ name: product.name, code: product.code });
     setEditingProductId(product.id);
     setShowAddProduct(true);
   };
@@ -209,28 +212,13 @@ export default function BOMManagement() {
     e.preventDefault();
     const oldItem = bomItems.find(b => b.id === editBom.id);
     await window.api.updateBomItem(editBom.id, {
-      component_name: editBom.component_name,
-      component_code: editBom.component_code,
       quantity: editBom.quantity,
-      unit: editBom.unit,
-      unit_price: editBom.unit_price,
-      vat_rate: editBom.vat_rate,
-      note: editBom.note,
-      material: editBom.material || '',
-      specification: editBom.specification || '',
-      color: editBom.color || '',
-      identifying_features: editBom.identifying_features || '',
-      pic_standard: editBom.pic_standard || '',
-      contract_no: editBom.contract_no || '',
-      payment_status: editBom.payment_status || '',
-      order_date: editBom.order_date || '',
-      needed_date: editBom.needed_date || '',
     });
     await window.api.logAudit({
       user_id: user.id, username: user.username,
       action: 'UPDATE', table_name: 'bom_items', record_id: editBom.id,
       old_values: JSON.stringify(oldItem),
-      new_values: JSON.stringify(editBom)
+      new_values: JSON.stringify({ quantity: editBom.quantity })
     });
     setShowEditBom(false);
     setEditBom(null);
@@ -281,40 +269,47 @@ export default function BOMManagement() {
     (p.code && p.code.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  // Determine which tab to show when hideTabs is true
+  const effectiveTab = hideTabs ? defaultTab : activeTab;
+
+  const showTabs = !hideTabs;
+
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Quản lý BOM</h1>
+        <h1>{effectiveTab === 'products' ? 'Sản phẩm & BOM' : 'Linh kiện'}</h1>
         <div className="page-actions">
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 4, marginRight: 16 }}>
-            <button
-              className={`btn-sm ${activeTab === 'products' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveTab('products')}
-            >
-              📦 Sản phẩm
-            </button>
-            <button
-              className={`btn-sm ${activeTab === 'components' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveTab('components')}
-            >
-              🔧 Linh kiện
-            </button>
-          </div>
-          {canEdit() && activeTab === 'products' && (
+          {showTabs && (
+            <div style={{ display: 'flex', gap: 4, marginRight: 16 }}>
+              <button
+                className={`btn-sm ${activeTab === 'products' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setActiveTab('products')}
+              >
+                📦 Sản phẩm
+              </button>
+              <button
+                className={`btn-sm ${activeTab === 'components' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setActiveTab('components')}
+              >
+                🔧 Linh kiện
+              </button>
+            </div>
+          )}
+          {canEdit() && effectiveTab === 'products' && (
             <>
               <button className="btn-success" onClick={handleImportExcel}>📥 Import Excel</button>
-              <button className="btn-primary" onClick={() => { setEditingProductId(null); setNewProduct({ name: '', code: '', category: '' }); setShowAddProduct(true); }}>+ Thêm sản phẩm</button>
-              <button className="btn-secondary" disabled={!selectedProduct} onClick={() => { if (selectedProduct) { setEditingProductId(selectedProduct.id); setNewProduct({ name: selectedProduct.name, code: selectedProduct.code || '', category: selectedProduct.category || '' }); setShowAddProduct(true); } }}>✏️ Sửa sản phẩm</button>
+              <button className="btn-primary" onClick={() => { setEditingProductId(null); setNewProduct({ name: '', code: '' }); setShowAddProduct(true); }}>+ Thêm sản phẩm</button>
+              <button className="btn-secondary" disabled={!selectedProduct} onClick={() => { if (selectedProduct) { setEditingProductId(selectedProduct.id); setNewProduct({ name: selectedProduct.name, code: selectedProduct.code || '' }); setShowAddProduct(true); } }}>✏️ Sửa sản phẩm</button>
             </>
           )}
-          {canEdit() && activeTab === 'components' && (
+          {canEdit() && effectiveTab === 'components' && (
             <button className="btn-primary" onClick={() => { setEditingComponentId(null); setNewComponent({ component_name: '', component_code: '', unit: 'pcs', unit_price: 0, material: '', specification: '', color: '', identifying_features: '', pic_standard: '', note: '' }); setShowAddComponent(true); }}>+ Thêm linh kiện</button>
           )}
         </div>
       </div>
 
-      {activeTab === 'products' && (
+      {effectiveTab === 'products' && (
       <div className="bom-layout">
         {/* Product List */}
         <div className="bom-products">
@@ -376,61 +371,25 @@ export default function BOMManagement() {
                       <th>STT</th>
                       <th>Tên linh kiện</th>
                       <th>Mã</th>
-                      <th>Vật liệu</th>
-                      <th>Quy cách</th>
-                      <th>Màu sắc</th>
-                      <th>Đặc điểm</th>
-                      <th>Tiêu chuẩn</th>
-                      <th>Hợp đồng</th>
-                      <th>Thanh toán</th>
-                      <th>Ngày đặt</th>
-                      <th>Ngày cần về</th>
                       <th>SL</th>
+                      <th>Đơn vị</th>
+                      <th>Đặc điểm</th>
                       {canEdit() && <th>Thao tác</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {bomItems.map((item, i) => {
-                      // Color coding for needed_date
-                      const getStatusColor = () => {
-                        if (!item.needed_date) return '';
-                        const needed = new Date(item.needed_date);
-                        const today = new Date();
-                        const diffDays = Math.ceil((needed - today) / (1000 * 60 * 60 * 24));
-                        if (diffDays < 0) return '#dc2626'; // ĐỎ - quá hạn
-                        if (diffDays <= 7) return '#eab308'; // VÀNG - còn ≤ 7 ngày
-                        return '#16a34a'; // XANH - còn nhiều hơn 7 ngày
-                      };
-                      const getStatusLabel = () => {
-                        if (!item.needed_date) return '';
-                        const needed = new Date(item.needed_date);
-                        const today = new Date();
-                        const diffDays = Math.ceil((needed - today) / (1000 * 60 * 60 * 24));
-                        if (diffDays < 0) return 'ĐỎ';
-                        if (diffDays <= 7) return 'VÀNG';
-                        return 'XANH';
-                      };
-                      return (
+                    {bomItems.map((item, i) => (
                         <tr key={item.id}>
                           <td>{i + 1}</td>
                           <td>{item.component_name}</td>
                           <td>{item.component_code}</td>
-                          <td>{item.material || '-'}</td>
-                          <td>{item.specification || '-'}</td>
-                          <td>{item.color || '-'}</td>
-                          <td>{item.identifying_features || '-'}</td>
-                          <td>{item.pic_standard || '-'}</td>
-                          <td>{item.contract_no || '-'}</td>
-                          <td>{item.payment_status || '-'}</td>
-                          <td>{item.order_date || '-'}</td>
+                          <td>{item.quantity}</td>
+                          <td>{item.unit}</td>
                           <td>
-                            {item.needed_date ? (
-                              <span style={{ background: getStatusColor(), color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
-                                {item.needed_date.split('T')[0]} {getStatusLabel()}
-                              </span>
+                            {item.identifying_features ? (
+                              <img src={item.identifying_features} alt="Đặc điểm" style={{ width: 40, cursor: 'pointer' }} onClick={() => window.open(item.identifying_features)} />
                             ) : '-'}
                           </td>
-                          <td>{item.quantity} {item.unit}</td>
                           {canEdit() && (
                             <td>
                               <div style={{ display: 'flex', gap: 4 }}>
@@ -440,10 +399,9 @@ export default function BOMManagement() {
                             </td>
                           )}
                         </tr>
-                      );
-                    })}
+                    ))}
                     {bomItems.length === 0 && (
-                      <tr><td colSpan={canEdit() ? 14 : 13} className="empty-state">Chưa có linh kiện nào</td></tr>
+                      <tr><td colSpan={canEdit() ? 7 : 6} className="empty-state">Chưa có linh kiện nào</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -457,7 +415,7 @@ export default function BOMManagement() {
       )}
 
       {/* Components Tab */}
-      {activeTab === 'components' && (
+      {effectiveTab === 'components' && (
         <div className="panel">
           <div className="panel-header">
             <h3>Danh sách linh kiện ({components.length})</h3>
@@ -474,9 +432,7 @@ export default function BOMManagement() {
                   <th>Màu sắc</th>
                   <th>Đặc điểm</th>
                   <th>Tiêu chuẩn</th>
-                  <th>SL</th>
                   <th>Đơn vị</th>
-                  <th>Đơn giá</th>
                   <th>Ghi chú</th>
                   {canEdit() && <th>Thao tác</th>}
                 </tr>
@@ -490,11 +446,13 @@ export default function BOMManagement() {
                     <td>{c.material || '-'}</td>
                     <td>{c.specification || '-'}</td>
                     <td>{c.color || '-'}</td>
-                    <td>{c.identifying_features || '-'}</td>
+                    <td>
+                      {c.identifying_features ? (
+                        <img src={c.identifying_features} alt="Đặc điểm" style={{ width: 50, cursor: 'pointer' }} onClick={() => window.open(c.identifying_features)} />
+                      ) : '-'}
+                    </td>
                     <td>{c.pic_standard || '-'}</td>
-                    <td>{c.quantity || '-'}</td>
                     <td>{c.unit || 'pcs'}</td>
-                    <td>{c.unit_price ? c.unit_price.toLocaleString('vi-VN') + ' đ' : '-'}</td>
                     <td>{c.note || '-'}</td>
                     {canEdit() && (
                       <td>
@@ -507,7 +465,7 @@ export default function BOMManagement() {
                   </tr>
                 ))}
                 {components.length === 0 && (
-                  <tr><td colSpan={canEdit() ? 12 : 11} className="empty-state">Chưa có linh kiện nào. Nhấn "+ Thêm linh kiện" để tạo mới.</td></tr>
+                  <tr><td colSpan={canEdit() ? 11 : 10} className="empty-state">Chưa có linh kiện nào. Nhấn "+ Thêm linh kiện" để tạo mới.</td></tr>
                 )}
               </tbody>
             </table>
@@ -517,7 +475,7 @@ export default function BOMManagement() {
 
       {/* Add Product Modal */}
       {showAddProduct && (
-        <div className="modal-overlay" onClick={() => { setShowAddProduct(false); setEditingProductId(null); setNewProduct({ name: '', code: '', category: '' }); }}>
+        <div className="modal-overlay" onClick={() => { setShowAddProduct(false); setEditingProductId(null); setNewProduct({ name: '', code: '' }); }}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ zIndex: 1001 }}>
             <h3>{editingProductId ? 'Sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
             <form onSubmit={handleAddProduct}>
@@ -528,10 +486,6 @@ export default function BOMManagement() {
               <div className="form-group">
                 <label>Mã sản phẩm</label>
                 <input value={newProduct.code} onChange={(e) => setNewProduct({ ...newProduct, code: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label>Loại</label>
-                <input value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowAddProduct(false)}>Hủy</button>
@@ -559,19 +513,21 @@ export default function BOMManagement() {
               />
             </div>
 
-            {/* Component List */}
+            {/* Component List - Loc bo nhung lk da co trong BOM */}
             <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 8, marginBottom: 16 }}>
               {components.filter(c =>
-                c.component_name.toLowerCase().includes(bomComponentSearch.toLowerCase()) ||
-                (c.component_code && c.component_code.toLowerCase().includes(bomComponentSearch.toLowerCase()))
+                !bomItems.some(b => b.component_code === c.component_code) &&
+                (c.component_name.toLowerCase().includes(bomComponentSearch.toLowerCase()) ||
+                (c.component_code && c.component_code.toLowerCase().includes(bomComponentSearch.toLowerCase())))
               ).length === 0 ? (
                 <div style={{ padding: 16, textAlign: 'center', color: '#64748b' }}>
                   {components.length === 0 ? 'Chưa có linh kiện nào. Hãy thêm linh kiện trong tab "Linh kiện" trước.' : 'Không tìm thấy linh kiện'}
                 </div>
               ) : (
                 components.filter(c =>
-                  c.component_name.toLowerCase().includes(bomComponentSearch.toLowerCase()) ||
-                  (c.component_code && c.component_code.toLowerCase().includes(bomComponentSearch.toLowerCase()))
+                  !bomItems.some(b => b.component_code === c.component_code) &&
+                  (c.component_name.toLowerCase().includes(bomComponentSearch.toLowerCase()) ||
+                  (c.component_code && c.component_code.toLowerCase().includes(bomComponentSearch.toLowerCase())))
                 ).map(c => (
                   <div
                     key={c.id}
@@ -624,22 +580,16 @@ export default function BOMManagement() {
             )}
 
             <form onSubmit={handleAddBom}>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Số lượng</label>
-                  <input type="number" min="1" value={newBom.quantity} onChange={(e) => setNewBom({ ...newBom, quantity: parseInt(e.target.value) })} />
-                </div>
-                <div className="form-group">
-                  <label>Ngày cần lk về</label>
-                  <input type="date" value={newBom.needed_date} onChange={(e) => setNewBom({ ...newBom, needed_date: e.target.value })} />
-                </div>
+              <div className="form-group">
+                <label>Số lượng</label>
+                <input type="number" min="1" value={newBom.quantity} onChange={(e) => setNewBom({ ...newBom, quantity: parseInt(e.target.value) })} />
               </div>
               <div className="form-group">
                 <label>Ghi chú</label>
                 <input value={newBom.note} onChange={(e) => setNewBom({ ...newBom, note: e.target.value })} />
               </div>
               <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => { setShowAddBom(false); setNewBom({ component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '', needed_date: '' }); }}>Hủy</button>
+                <button type="button" className="btn-secondary" onClick={() => { setShowAddBom(false); setNewBom({ component_name: '', component_code: '', quantity: 1, unit: 'pcs', unit_price: 0, vat_rate: 0.08, note: '', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', contract_no: '', payment_status: '', order_date: '' }); }}>Hủy</button>
                 <button type="submit" className="btn-primary" disabled={!newBom.component_code}>Lưu</button>
               </div>
             </form>
@@ -673,85 +623,20 @@ export default function BOMManagement() {
         </div>
       )}
 
-      {/* Edit BOM Item Modal */}
+      {/* Edit BOM Item Modal - Chi cho phep update so luong */}
       {showEditBom && editBom && (
         <div className="modal-overlay" onClick={() => setShowEditBom(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
-            <h3>Sửa linh kiện</h3>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Sửa số lượng linh kiện</h3>
+            <div style={{ marginBottom: 16, padding: 12, background: '#f8f9fa', borderRadius: 8 }}>
+              <div><strong>{editBom.component_name}</strong></div>
+              <div style={{ color: '#64748b', fontSize: 12 }}>Mã: {editBom.component_code}</div>
+              <div style={{ fontSize: 13 }}>Đơn vị: {editBom.unit} | Đặc điểm: {editBom.identifying_features ? 'Có hình' : '-'}</div>
+            </div>
             <form onSubmit={handleEditBom}>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Tên linh kiện</label>
-                  <input required value={editBom.component_name} onChange={(e) => setEditBom({ ...editBom, component_name: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Mã linh kiện <span style={{color:'red'}}>*</span></label>
-                  <input required value={editBom.component_code || ''} onChange={(e) => setEditBom({ ...editBom, component_code: e.target.value })} placeholder="Bắt buộc" />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Vật liệu</label>
-                  <input value={editBom.material || ''} onChange={(e) => setEditBom({ ...editBom, material: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Quy cách (KTx / Độ dày mm)</label>
-                  <input value={editBom.specification || ''} onChange={(e) => setEditBom({ ...editBom, specification: e.target.value })} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Màu sắc</label>
-                  <input value={editBom.color || ''} onChange={(e) => setEditBom({ ...editBom, color: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Đặc điểm nhận dạng</label>
-                  <input value={editBom.identifying_features || ''} onChange={(e) => setEditBom({ ...editBom, identifying_features: e.target.value })} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Tiêu chuẩn (P.I.C / Tình trạng)</label>
-                  <input value={editBom.pic_standard || ''} onChange={(e) => setEditBom({ ...editBom, pic_standard: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Hợp đồng</label>
-                  <input value={editBom.contract_no || ''} onChange={(e) => setEditBom({ ...editBom, contract_no: e.target.value })} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Thanh toán</label>
-                  <input value={editBom.payment_status || ''} onChange={(e) => setEditBom({ ...editBom, payment_status: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Ngày đặt hàng</label>
-                  <input type="date" value={editBom.order_date || ''} onChange={(e) => setEditBom({ ...editBom, order_date: e.target.value })} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Ngày cần lk về</label>
-                  <input type="date" value={editBom.needed_date || ''} onChange={(e) => setEditBom({ ...editBom, needed_date: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Số lượng</label>
-                  <input type="number" min="1" value={editBom.quantity} onChange={(e) => setEditBom({ ...editBom, quantity: parseInt(e.target.value) || 1 })} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Đơn vị</label>
-                  <input value={editBom.unit} onChange={(e) => setEditBom({ ...editBom, unit: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Đơn giá</label>
-                  <input type="number" min="0" value={editBom.unit_price} onChange={(e) => setEditBom({ ...editBom, unit_price: parseFloat(e.target.value) || 0 })} />
-                </div>
-              </div>
               <div className="form-group">
-                <label>Ghi chú</label>
-                <input value={editBom.note || ''} onChange={(e) => setEditBom({ ...editBom, note: e.target.value })} />
+                <label>Số lượng</label>
+                <input type="number" min="1" value={editBom.quantity} onChange={(e) => setEditBom({ ...editBom, quantity: parseInt(e.target.value) || 1 })} />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowEditBom(false)}>Hủy</button>
@@ -795,7 +680,23 @@ export default function BOMManagement() {
                 </div>
                 <div className="form-group">
                   <label>Đặc điểm nhận dạng</label>
-                  <input value={newComponent.identifying_features} onChange={(e) => setNewComponent({ ...newComponent, identifying_features: e.target.value })} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setNewComponent({ ...newComponent, identifying_features: ev.target.result });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  {newComponent.identifying_features && (
+                    <img src={newComponent.identifying_features} alt="Preview" style={{ width: 100, marginTop: 8 }} />
+                  )}
                 </div>
               </div>
               <div className="form-row">
@@ -806,12 +707,6 @@ export default function BOMManagement() {
                 <div className="form-group">
                   <label>Đơn vị</label>
                   <input value={newComponent.unit} onChange={(e) => setNewComponent({ ...newComponent, unit: e.target.value })} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Đơn giá</label>
-                  <input type="number" min="0" value={newComponent.unit_price} onChange={(e) => setNewComponent({ ...newComponent, unit_price: parseFloat(e.target.value) || 0 })} />
                 </div>
               </div>
               <div className="form-group">
