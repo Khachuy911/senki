@@ -89,6 +89,7 @@ export default function BOMManagement({ defaultTab = 'products', hideTabs = fals
         old_values: null, new_values: JSON.stringify(newComponent)
       });
       setEditingComponentId(null);
+      setShowAddComponent(false);
       setNewComponent({ component_name: '', component_code: '', unit: 'pcs', material: '', specification: '', color: '', identifying_features: '', pic_standard: '', note: '' });
       loadComponents();
     } else {

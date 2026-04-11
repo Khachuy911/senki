@@ -6,20 +6,15 @@ export default function Purchasing() {
   const [purchases, setPurchases] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
-  const [selectedItem, setSelectedItem] = useState(null);
 
-  useEffect(() => {
-    loadPurchases();
-  }, []);
+  useEffect(() => { loadPurchases(); }, []);
 
   const loadPurchases = async () => {
     const data = await window.api.getPurchases();
     setPurchases(data);
   };
 
-  // Group purchases by request code (extracted from note field)
   const groupedPurchases = purchases.reduce((groups, p) => {
-    // Extract PR code from note like "PR: PR-2026-0001"
     const match = p.note?.match(/PR:\s*(PR-\d{4}-\d+)/);
     const prCode = match ? match[1] : 'Khác';
     if (!groups[prCode]) groups[prCode] = [];
@@ -35,17 +30,6 @@ export default function Purchasing() {
   const handleSave = async (id) => {
     const result = await window.api.updatePurchase(id, editData);
     if (result.success) {
-      // Auto-stock excess delivery to inventory
-      const excess = (editData.actual_quantity || 0) - (editData.quantity || 0);
-      if (excess > 0) {
-        await window.api.autoStockInventory({
-          component_code: editData.component_code,
-          component_name: editData.component_name,
-          quantity: excess,
-          unit: editData.unit || 'pcs',
-          note: `Vượt đơn từ PO`
-        });
-      }
       setEditingId(null);
       loadPurchases();
     } else {
@@ -53,27 +37,20 @@ export default function Purchasing() {
     }
   };
 
+  const handleAddToStock = async (id) => {
+    const result = await window.api.addPurchaseToStock(id);
+    if (result.success) {
+      alert(`Đã nhập ${result.excess} vào kho`);
+      loadPurchases();
+    } else {
+      alert(result.message || 'Lỗi khi nhập kho');
+    }
+  };
+
   const handleDeletePurchase = async (id) => {
     if (!confirm('Xác nhận xóa đơn mua hàng này?')) return;
     await window.api.deletePurchase(id);
     loadPurchases();
-  };
-
-  // Stage badges
-  const stageConfig = {
-    'Chưa đặt':      { color: '#94a3b8', bg: '#f1f5f9', label: 'Chưa đặt' },
-    'Đã đặt hàng':   { color: '#2563eb', bg: '#dbeafe', label: 'Đã đặt' },
-    'Đã tạm ứng':    { color: '#d97706', bg: '#fef3c7', label: 'Tạm ứng' },
-    'Đã thanh toán': { color: '#16a34a', bg: '#dcfce7', label: 'Thanh toán' },
-    'Vượt đơn':      { color: '#dc2626', bg: '#fee2e2', label: '⚠️ Vượt đơn — Khóa TT' },
-  };
-
-  const getStage = (p, isOverDelivery) => {
-    if (p.payment_status === 'Đã thanh toán đủ') return 'Đã thanh toán';
-    if (p.payment_status === 'Đã tạm ứng') return 'Đã tạm ứng';
-    if (isOverDelivery) return 'Vượt đơn';
-    if (p.contract_no || p.quantity > 0) return 'Đã đặt hàng';
-    return 'Chưa đặt';
   };
 
   return (
@@ -85,7 +62,6 @@ export default function Purchasing() {
         </p>
       </div>
 
-      {/* Summary Stats */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 20px', flex: 1 }}>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#1e293b' }}>{purchases.length}</div>
@@ -101,7 +77,6 @@ export default function Purchasing() {
         </div>
       </div>
 
-      {/* Main Table */}
       <div className="panel">
         <div className="table-container">
           <table>
@@ -115,7 +90,6 @@ export default function Purchasing() {
                 <th>P.I.C</th>
                 <th>Hợp Đồng</th>
                 <th>Thanh toán</th>
-                <th>Trạng thái</th>
                 <th>Ghi chú</th>
                 {canEdit() && <th>Thao tác</th>}
               </tr>
@@ -124,16 +98,15 @@ export default function Purchasing() {
               {Object.entries(groupedPurchases).map(([prCode, items]) => (
                 <>
                   <tr key={`header-${prCode}`} style={{ background: '#f1f5f9' }}>
-                    <td colSpan="11" style={{ fontWeight: 700, color: '#2563eb', padding: '8px 12px' }}>
+                    <td colSpan="10" style={{ fontWeight: 700, color: '#2563eb', padding: '8px 12px' }}>
                       📋 {prCode} — {items.length} linh kiện
                     </td>
                   </tr>
                   {items.map(p => {
                     const isEditing = editingId === p.id;
-                    const isOverDelivery = p.actual_quantity > p.quantity;
-                    const isFullDelivery = p.actual_quantity >= p.quantity && p.actual_quantity > 0;
-                    const stage = getStage(p, isOverDelivery);
-                    const stageStyle = stageConfig[stage] || stageConfig['Chưa đặt'];
+                    const excessQty = (p.actual_quantity || 0) - (p.quantity || 0);
+                    const isOverDelivery = excessQty > 0;
+                    const canStock = isOverDelivery && (!p.stocked || p.stocked === 0);
                     return (
                       <tr key={p.id}>
                         <td>
@@ -152,13 +125,10 @@ export default function Purchasing() {
                           ) : (
                             <span>
                               <strong style={{
-                                color: isOverDelivery ? '#dc2626' : (isFullDelivery ? '#16a34a' : (p.actual_quantity > 0 ? '#d97706' : '#94a3b8'))
+                                color: isOverDelivery ? '#dc2626' : (p.actual_quantity >= p.quantity && p.actual_quantity > 0 ? '#16a34a' : (p.actual_quantity > 0 ? '#d97706' : '#94a3b8'))
                               }}>
                                 {p.actual_quantity || 0}
                               </strong>
-                              {isOverDelivery && (
-                                <span style={{ fontSize: 11, color: '#dc2626', marginLeft: 4 }}>+{p.actual_quantity - p.quantity} thừa</span>
-                              )}
                             </span>
                           )}
                         </td>
@@ -187,35 +157,19 @@ export default function Purchasing() {
                         </td>
                         <td>
                           {isEditing ? (
-                            isOverDelivery ? (
-                              <span style={{ fontSize: 11, color: '#dc2626', fontStyle: 'italic' }}>Chờ xử lý vượt đơn</span>
-                            ) : (
-                              <select className="qty-input" style={{ width: 120 }} value={editData.payment_status || 'Chưa thanh toán'} onChange={e => setEditData({...editData, payment_status: e.target.value})}>
-                                <option value="Chưa thanh toán">Chưa TT</option>
-                                <option value="Đã tạm ứng">Tạm ứng</option>
-                                <option value="Đã thanh toán đủ">Đã xong</option>
-                              </select>
-                            )
+                            <select className="qty-input" style={{ width: 120 }} value={editData.payment_status || 'Chưa thanh toán'} onChange={e => setEditData({...editData, payment_status: e.target.value})}>
+                              <option value="Chưa thanh toán">Chưa TT</option>
+                              <option value="Đã tạm ứng">Tạm ứng</option>
+                              <option value="Đã thanh toán đủ">Đã xong</option>
+                            </select>
                           ) : (
-                            isOverDelivery ? (
-                              <span style={{ fontSize: 11, color: '#dc2626', fontStyle: 'italic' }}>Chờ xử lý vượt đơn</span>
-                            ) : (
-                              <span style={{
-                                color: p.payment_status === 'Đã thanh toán đủ' ? '#16a34a' : (p.payment_status === 'Đã tạm ứng' ? '#d97706' : '#dc2626'),
-                                fontWeight: 600, fontSize: 12
-                              }}>
-                                {p.payment_status || 'Chưa thanh toán'}
-                              </span>
-                            )
+                            <span style={{
+                              color: p.payment_status === 'Đã thanh toán đủ' ? '#16a34a' : (p.payment_status === 'Đã tạm ứng' ? '#d97706' : '#dc2626'),
+                              fontWeight: 600, fontSize: 12
+                            }}>
+                              {p.payment_status === 'Đã thanh toán đủ' ? 'Đã thanh toán' : (p.payment_status === 'Đã tạm ứng' ? 'Đã tạm ứng' : 'Chưa thanh toán')}
+                            </span>
                           )}
-                        </td>
-                        <td>
-                          <span style={{
-                            display: 'inline-block', padding: '3px 8px', borderRadius: 12, fontSize: 11,
-                            color: stageStyle.color, background: stageStyle.bg, fontWeight: 600
-                          }}>
-                            {stageStyle.label}
-                          </span>
                         </td>
                         <td>
                           {isEditing ? (
@@ -236,6 +190,12 @@ export default function Purchasing() {
                                 <>
                                   <button className="btn-icon btn-edit-icon" onClick={() => startEdit(p)} title="Sửa">✎</button>
                                   {canDelete() && <button className="btn-icon btn-danger-icon" onClick={() => handleDeletePurchase(p.id)} title="Xóa">✕</button>}
+                                  {canStock && (
+                                    <button className="btn-icon" style={{ background: '#dcfce7', color: '#16a34a' }} onClick={() => handleAddToStock(p.id)} title="Nhập kho">📥 +{excessQty}</button>
+                                  )}
+                                  {isOverDelivery && p.stocked === 1 && (
+                                    <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Đã nhập</span>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -247,22 +207,15 @@ export default function Purchasing() {
                 </>
               ))}
               {purchases.length === 0 && (
-                <tr><td colSpan="11" className="empty-state">Chưa có đơn mua hàng nào</td></tr>
+                <tr><td colSpan="10" className="empty-state">Chưa có đơn mua hàng nào</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Legend */}
-      <div style={{ marginTop: 16, padding: '12px 16px', background: '#f8fafc', borderRadius: 8, display: 'flex', gap: 20, alignItems: 'center' }}>
-        <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Trạng thái:</span>
-        {Object.entries(stageConfig).map(([key, val]) => (
-          <span key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: val.color }}></span>
-            <span style={{ fontSize: 12, color: '#475569' }}>{val.label}</span>
-          </span>
-        ))}
+      <div style={{ marginTop: 16, padding: '12px 16px', background: '#f8fafc', borderRadius: 8, fontSize: 12, color: '#64748b' }}>
+        💡 Khi số lượng về nhiều hơn cần, click <strong>📥 Nhập kho</strong> để cộng phần thừa vào kho
       </div>
     </div>
   );

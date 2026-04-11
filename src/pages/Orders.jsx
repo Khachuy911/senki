@@ -151,7 +151,11 @@ export default function Orders() {
 
   const handleUpdate = async (e) => {
     e.preventDefault();
-    await window.api.updateOrder(editingOrder.id, editingOrder);
+    const result = await window.api.updateOrder(editingOrder.id, editingOrder);
+    if (!result.success) {
+      alert(result.message || 'Không thể cập nhật đơn hàng');
+      return;
+    }
     await window.api.logAudit({
       user_id: user.id, username: user.username,
       action: 'UPDATE', table_name: 'orders', record_id: editingOrder.id,
@@ -398,7 +402,7 @@ export default function Orders() {
                       <option value="pending">Chờ xử lý</option>
                       <option value="processing">Đang sản xuất</option>
                       <option value="completed">Hoàn thành</option>
-                      <option value="cancelled">Đã hủy</option>
+                      {editingOrder.status !== 'completed' && <option value="cancelled">Đã hủy</option>}
                     </select>
                   </div>
                   <div className="form-group">

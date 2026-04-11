@@ -57,38 +57,35 @@ function registerPurchasingHandlers(ipcMain, db) {
   });
 
   ipcMain.handle('purchasing:update', (_, id, data) => {
-    const oldPurchase = db.prepare('SELECT * FROM purchasing WHERE id = ?').get(id);
-    const oldActualQty = oldPurchase ? oldPurchase.actual_quantity : 0;
-    const newActualQty = data.actual_quantity || 0;
-
     db.prepare(
       'UPDATE purchasing SET pic = ?, contract_no = ?, payment_status = ?, expected_date = ?, actual_quantity = ?, note = ? WHERE id = ?'
-    ).run(data.pic, data.contract_no, data.payment_status, data.expected_date, newActualQty, data.note, id);
-
-    const qtyDiff = newActualQty - oldActualQty;
-    if (qtyDiff > 0 && oldPurchase) {
-      // Get reserved quantity for this purchase to determine excess
-      const reservation = db.prepare(
-        "SELECT quantity as reserved_qty FROM purchase_reservations WHERE purchase_id = ? AND status = 'pending'"
-      ).get(id);
-
-      const reservedQty = reservation?.reserved_qty || 0;
-      // Only add excess (received - reserved) to inventory, not the full received amount
-      const excessQty = Math.max(0, newActualQty - reservedQty);
-
-      if (excessQty > 0) {
-        db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE component_code = ?')
-          .run(excessQty, oldPurchase.component_code);
-        db.prepare(
-          'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(oldPurchase.component_code, 'purchase_add', excessQty, id, 'purchase', `Nhận hàng từ PO (thừa ${excessQty})`);
-      }
-      db.prepare(
-        "UPDATE purchase_reservations SET status = 'received' WHERE purchase_id = ? AND status = 'pending'"
-      ).run(id);
-    }
-
+    ).run(data.pic, data.contract_no, data.payment_status, data.expected_date, data.actual_quantity, data.note, id);
     return { success: true };
+  });
+
+  ipcMain.handle('purchasing:addToStock', (_, id) => {
+    const purchase = db.prepare('SELECT * FROM purchasing WHERE id = ?').get(id);
+    if (!purchase) return { success: false, message: 'Không tìm thấy đơn mua hàng' };
+    if (purchase.stocked === 1) return { success: false, message: 'Đã nhập kho rồi' };
+    const excess = (purchase.actual_quantity || 0) - (purchase.quantity || 0);
+    if (excess <= 0) return { success: false, message: 'Không có số lượng thừa' };
+
+    // Kiem tra ton tai linh kien trong kho
+    const inv = db.prepare('SELECT id FROM inventory WHERE component_code = ?').get(purchase.component_code);
+    if (inv) {
+      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE component_code = ?')
+        .run(excess, purchase.component_code);
+    } else {
+      db.prepare(
+        'INSERT INTO inventory (component_name, component_code, quantity, unit, unit_price, min_stock, location) VALUES (?, ?, ?, ?, 0, 0, ?)'
+      ).run(purchase.component_name, purchase.component_code, excess, purchase.unit || 'pcs', '');
+    }
+    db.prepare(
+      'INSERT INTO inventory_transactions (component_code, type, quantity, reference_id, reference_type, note) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(purchase.component_code, 'purchase_add', excess, id, 'purchase', `Nhận hàng từ PO (thừa ${excess})`);
+    db.prepare("UPDATE purchase_reservations SET status = 'received' WHERE purchase_id = ? AND status = 'pending'").run(id);
+    db.prepare('UPDATE purchasing SET stocked = 1 WHERE id = ?').run(id);
+    return { success: true, excess };
   });
 
   ipcMain.handle('purchasing:delete', (_, id) => {

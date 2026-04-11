@@ -111,6 +111,7 @@ function initDatabase(app) {
       expected_date DATETIME,
       actual_quantity INTEGER DEFAULT 0,
       note TEXT,
+      stocked INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -191,6 +192,7 @@ function initDatabase(app) {
   try { db.exec('ALTER TABLE orders ADD COLUMN customer_address TEXT'); } catch (e) {}
   try { db.exec('ALTER TABLE orders ADD COLUMN shipping_fee REAL DEFAULT 0'); } catch (e) {}
   try { db.exec('ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0'); } catch (e) {}
+  try { db.exec("ALTER TABLE orders ADD COLUMN inventory_deducted TEXT"); } catch (e) {}
 
   // Upgrade existing bom_items table
   try { db.exec("ALTER TABLE bom_items ADD COLUMN material TEXT"); } catch (e) {}
@@ -202,6 +204,7 @@ function initDatabase(app) {
   try { db.exec("ALTER TABLE bom_items ADD COLUMN payment_status TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE bom_items ADD COLUMN order_date TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE bom_items ADD COLUMN needed_date TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE purchasing ADD COLUMN stocked INTEGER DEFAULT 0"); } catch (e) {}
 
   // Create default admin if not exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');

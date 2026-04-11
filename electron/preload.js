@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('api', {
   getPurchases: () => ipcRenderer.invoke('purchasing:getAll'),
   createPurchases: (items) => ipcRenderer.invoke('purchasing:createMultiple', items),
   updatePurchase: (id, data) => ipcRenderer.invoke('purchasing:update', id, data),
+  addPurchaseToStock: (id) => ipcRenderer.invoke('purchasing:addToStock', id),
   deletePurchase: (id) => ipcRenderer.invoke('purchasing:delete', id),
 
   // Purchase Requests
