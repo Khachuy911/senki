@@ -4,18 +4,33 @@ function registerMiscHandlers(ipcMain, db) {
   // Dashboard
   ipcMain.handle('dashboard:stats', () => {
     const products = db.prepare('SELECT COUNT(*) as count FROM products').get();
-    const orders = db.prepare('SELECT COUNT(*) as count FROM orders').get();
+    const components = db.prepare('SELECT COUNT(*) as count FROM components').get();
+    const bomItems = db.prepare('SELECT COUNT(*) as count FROM bom_items').get();
     const inventory = db.prepare('SELECT COUNT(*) as count FROM inventory').get();
     const lowStock = db.prepare('SELECT COUNT(*) as count FROM inventory WHERE quantity <= min_stock').get();
+    const orders = db.prepare('SELECT COUNT(*) as count FROM orders').get();
     const pendingOrders = db.prepare("SELECT COUNT(*) as count FROM orders WHERE status = 'pending'").get();
     const processingOrders = db.prepare("SELECT COUNT(*) as count FROM orders WHERE status = 'processing'").get();
+    const completedOrders = db.prepare("SELECT COUNT(*) as count FROM orders WHERE status = 'completed'").get();
+    const purchases = db.prepare('SELECT COUNT(*) as count FROM purchasing').get();
+    // Components in BOM but not in inventory
+    const inBomNotInv = db.prepare(`
+      SELECT COUNT(DISTINCT bi.component_code) as count FROM bom_items bi
+      LEFT JOIN inventory i ON bi.component_code = i.component_code
+      WHERE i.id IS NULL
+    `).get();
     return {
       products: products.count,
-      orders: orders.count,
+      components: components.count,
+      bomItems: bomItems.count,
       inventory: inventory.count,
       lowStock: lowStock.count,
+      orders: orders.count,
       pendingOrders: pendingOrders.count,
-      processingOrders: processingOrders.count
+      processingOrders: processingOrders.count,
+      completedOrders: completedOrders.count,
+      purchases: purchases.count,
+      inBomNotInv: inBomNotInv.count
     };
   });
 
