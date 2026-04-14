@@ -212,8 +212,9 @@ export default function BOMManagement({ defaultTab = 'products', hideTabs = fals
   const handleEditBom = async (e) => {
     e.preventDefault();
     const oldItem = bomItems.find(b => b.id === editBom.id);
+    const qty = parseInt(editBom.quantity) || 1;
     await window.api.updateBomItem(editBom.id, {
-      quantity: editBom.quantity,
+      quantity: qty,
     });
     await window.api.logAudit({
       user_id: user.id, username: user.username,
@@ -583,7 +584,7 @@ export default function BOMManagement({ defaultTab = 'products', hideTabs = fals
             <form onSubmit={handleAddBom}>
               <div className="form-group">
                 <label>Số lượng</label>
-                <input type="number" min="1" value={newBom.quantity} onChange={(e) => setNewBom({ ...newBom, quantity: parseInt(e.target.value) })} />
+                <input type="number" min="1" value={newBom.quantity || ''} onChange={(e) => setNewBom({ ...newBom, quantity: e.target.value === '' ? 1 : parseInt(e.target.value) || 1 })} />
               </div>
               <div className="form-group">
                 <label>Ghi chú</label>
@@ -637,7 +638,17 @@ export default function BOMManagement({ defaultTab = 'products', hideTabs = fals
             <form onSubmit={handleEditBom}>
               <div className="form-group">
                 <label>Số lượng</label>
-                <input type="number" min="1" value={editBom.quantity} onChange={(e) => setEditBom({ ...editBom, quantity: parseInt(e.target.value) || 1 })} />
+                <input
+                  type="number"
+                  min="1"
+                  value={editBom.quantity}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const num = parseInt(val);
+                    setEditBom({ ...editBom, quantity: isNaN(num) ? val : num });
+                  }}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: 16, textAlign: 'center' }}
+                />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowEditBom(false)}>Hủy</button>

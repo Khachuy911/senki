@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
+const path = require('path');
 
-function registerMiscHandlers(ipcMain, db) {
+function registerMiscHandlers(ipcMain, db, app) {
   // Dashboard
   ipcMain.handle('dashboard:stats', () => {
     const products = db.prepare('SELECT COUNT(*) as count FROM products').get();
@@ -53,6 +54,12 @@ function registerMiscHandlers(ipcMain, db) {
   // Excel Export Orders
   ipcMain.handle('excel:exportOrders', async () => {
     try {
+      const { dialog } = require('electron');
+      const result = await dialog.showSaveDialog({
+        defaultPath: `orders_export_${Date.now()}.xlsx`,
+        filters: [{ name: 'Excel', extensions: ['xlsx'] }]
+      });
+      if (result.canceled) return { canceled: true };
       const orders = db.prepare(`
         SELECT o.*, p.name as product_name, p.code as product_code
         FROM orders o LEFT JOIN products p ON o.product_id = p.id
@@ -61,9 +68,8 @@ function registerMiscHandlers(ipcMain, db) {
       const ws = XLSX.utils.json_to_sheet(orders);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-      const filePath = path.join(app.getPath('documents'), `orders_export_${Date.now()}.xlsx`);
-      XLSX.writeFile(wb, filePath);
-      return { success: true, filePath };
+      XLSX.writeFile(wb, result.filePath);
+      return { success: true, filePath: result.filePath };
     } catch (e) {
       return { success: false, message: e.message };
     }

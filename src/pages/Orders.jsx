@@ -12,7 +12,7 @@ export default function Orders() {
   const [sortField, setSortField] = useState('order_date');
   const [sortDir, setSortDir] = useState('desc');
   const [newOrder, setNewOrder] = useState({
-    order_code: '', customer_name: '', product_id: '', quantity: 1, unit_price: 0, total_price: 0, delivered_quantity: 0, vat_rate: 0.08, status: 'pending', order_date: '', delivery_date: '', payment_deadline: '', assigned_to: '', note: '',
+    order_code: '', customer_name: '', product_id: '', _product_search: '', _show_product_list: false, quantity: 1, unit_price: 0, total_price: 0, delivered_quantity: 0, vat_rate: 0.08, status: 'pending', order_date: '', delivery_date: '', payment_deadline: '', assigned_to: '', note: '',
     shipping_fee: 0, discount: 0
   });
 
@@ -38,14 +38,28 @@ export default function Orders() {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    const result = await window.api.createOrder(newOrder);
+    if (!newOrder.quantity || newOrder.quantity < 1) {
+      alert('Số lượng phải lớn hơn 0');
+      return;
+    }
+    if (!newOrder.unit_price || newOrder.unit_price <= 0) {
+      alert('Đơn giá phải lớn hơn 0');
+      return;
+    }
+    if (newOrder.vat_rate < 0) {
+      alert('VAT không được âm');
+      return;
+    }
+    const quantity = parseInt(newOrder.quantity) || 1;
+    const orderToSave = { ...newOrder, quantity };
+    const result = await window.api.createOrder(orderToSave);
     if (result.success) {
       await window.api.logAudit({
         user_id: user.id, username: user.username,
         action: 'CREATE', table_name: 'orders', record_id: result.id,
         old_values: null, new_values: JSON.stringify(newOrder)
       });
-      setNewOrder({ order_code: '', customer_name: '', product_id: '', quantity: 1, unit_price: 0, total_price: 0, delivered_quantity: 0, vat_rate: 0.08, status: 'pending', order_date: '', delivery_date: '', payment_deadline: '', assigned_to: '', note: '', shipping_fee: 0, discount: 0 });
+      setNewOrder({ order_code: '', customer_name: '', product_id: '', _product_search: '', _show_product_list: false, quantity: 1, unit_price: 0, total_price: 0, delivered_quantity: 0, vat_rate: 0.08, status: 'pending', order_date: '', delivery_date: '', payment_deadline: '', assigned_to: '', note: '', shipping_fee: 0, discount: 0 });
       setShowAdd(false);
       loadOrders();
     }
@@ -302,28 +316,93 @@ export default function Orders() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Sản phẩm</label>
-                  <select value={newOrder.product_id} onChange={(e) => setNewOrder({ ...newOrder, product_id: e.target.value })}>
-                    <option value="">-- Chọn sản phẩm --</option>
-                    {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-                  </select>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      autoComplete="off"
+                      value={newOrder._product_search || ''}
+                      onChange={(e) => {
+                        const search = e.target.value;
+                        const matched = products.find(p =>
+                          search === p.name || search === p.code ||
+                          p.name.toLowerCase().includes(search.toLowerCase()) ||
+                          (p.code && p.code.toLowerCase().includes(search.toLowerCase()))
+                        );
+                        setNewOrder({
+                          ...newOrder,
+                          _product_search: search,
+                          product_id: matched ? matched.id : ''
+                        });
+                      }}
+                      onFocus={() => setNewOrder({ ...newOrder, _show_product_list: true })}
+                      onBlur={() => setTimeout(() => setNewOrder({ ...newOrder, _show_product_list: false }), 200)}
+                      placeholder="Nhập tên hoặc mã SP..."
+                    />
+                    {newOrder._show_product_list && (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                        background: '#fff', border: '1px solid #ddd', borderRadius: '4px',
+                        maxHeight: '200px', overflow: 'auto', boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                      }}>
+                        {products.filter(p =>
+                          !newOrder._product_search ||
+                          p.name.toLowerCase().includes(newOrder._product_search.toLowerCase()) ||
+                          (p.code && p.code.toLowerCase().includes(newOrder._product_search.toLowerCase()))
+                        ).map((p) => (
+                          <div
+                            key={p.id}
+                            onMouseDown={() => setNewOrder({
+                              ...newOrder,
+                              product_id: p.id,
+                              _product_search: `${p.name} (${p.code})`,
+                              _show_product_list: false
+                            })}
+                            style={{
+                              padding: '8px 12px', cursor: 'pointer',
+                              background: newOrder.product_id === p.id ? '#e8f5e9' : '#fff'
+                            }}
+                            onMouseOver={(e) => e.target.style.background = '#f3f4f6'}
+                            onMouseOut={(e) => e.target.style.background = newOrder.product_id === p.id ? '#e8f5e9' : '#fff'}
+                          >
+                            {p.name} <span style={{ color: '#888' }}>({p.code})</span>
+                          </div>
+                        ))}
+                        {products.filter(p =>
+                          !newOrder._product_search ||
+                          p.name.toLowerCase().includes(newOrder._product_search.toLowerCase()) ||
+                          (p.code && p.code.toLowerCase().includes(newOrder._product_search.toLowerCase()))
+                        ).length === 0 && (
+                          <div style={{ padding: '8px 12px', color: '#888' }}>Không có sản phẩm phù hợp</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {newOrder.product_id && (
+                    <small style={{ color: '#16a34a', marginTop: '4px', display: 'block' }}>
+                      Đã chọn: {products.find(p => p.id === newOrder.product_id)?.name} ({products.find(p => p.id === newOrder.product_id)?.code})
+                    </small>
+                  )}
                 </div>
                 <div className="form-group"><label>Tổng số lượng</label><input type="number" min="1" value={newOrder.quantity} onChange={(e) => {
                     const val = e.target.value;
-                    const qty = val === '' ? 0 : (parseInt(val) || 0);
-                    setNewOrder({ ...newOrder, quantity: qty, total_price: qty * (newOrder.unit_price || 0) });
-                  }} /></div>
+                    if (val === '') {
+                      setNewOrder({ ...newOrder, quantity: '', total_price: 0 });
+                    } else {
+                      const qty = parseInt(val) || '';
+                      setNewOrder({ ...newOrder, quantity: qty, total_price: (qty || 0) * (newOrder.unit_price || 0) });
+                    }
+                  }} placeholder="0" /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Đơn giá (VNĐ)</label><input type="number" min="0" value={newOrder.unit_price} onChange={(e) => {
-                    const val = e.target.value;
-                    const price = val === '' ? 0 : (parseFloat(val) || 0);
+                <div className="form-group"><label>Đơn giá</label><input type="text" value={newOrder.unit_price ? Number(newOrder.unit_price).toLocaleString('vi-VN') : ''} onChange={(e) => {
+                    const raw = e.target.value.replace(/[^0-9]/g, '');
+                    const price = raw === '' ? 0 : parseFloat(raw);
                     setNewOrder({ ...newOrder, unit_price: price, total_price: price * (newOrder.quantity || 0) });
-                  }} /></div>
-                <div className="form-group"><label>Tổng tiền (chưa VAT)</label><input type="number" min="0" value={newOrder.total_price} readOnly /></div>
+                  }} style={{ textAlign: 'right' }} placeholder="0" /></div>
+                <div className="form-group"><label>Thành tiền</label><input type="text" value={newOrder.total_price ? Number(newOrder.total_price).toLocaleString('vi-VN') : '0'} readOnly style={{ textAlign: 'right' }} /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Thuế VAT (%)</label><input type="number" step="0.01" min="0" value={newOrder.vat_rate} onChange={(e) => setNewOrder({ ...newOrder, vat_rate: e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0) })} /></div>
-                <div className="form-group"><label>Tổng tiền (có VAT)</label><input type="number" value={newOrder.total_price * (1 + newOrder.vat_rate)} readOnly /></div>
+                <div className="form-group"><label>VAT (%)</label><input type="number" step="0.01" min="0" value={newOrder.vat_rate} onChange={(e) => setNewOrder({ ...newOrder, vat_rate: e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0) })} /></div>
+                <div className="form-group"><label>Tổng cộng</label><input type="text" value={Number(newOrder.total_price * (1 + newOrder.vat_rate)).toLocaleString('vi-VN')} readOnly style={{ textAlign: 'right', color: '#dc2626', fontWeight: 'bold' }} /></div>
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -426,7 +505,11 @@ export default function Orders() {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Đơn giá</label>
-                    <input type="number" min="0" value={editingOrder.unit_price || 0} onChange={(e) => setEditingOrder({ ...editingOrder, unit_price: parseFloat(e.target.value) || 0, total_price: (parseFloat(e.target.value) || 0) * editingOrder.quantity })} />
+                    <input type="text" value={editingOrder.unit_price ? Number(editingOrder.unit_price).toLocaleString('vi-VN') : ''} onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '');
+                      const price = raw === '' ? 0 : parseFloat(raw);
+                      setEditingOrder({ ...editingOrder, unit_price: price, total_price: price * editingOrder.quantity });
+                    }} style={{ textAlign: 'right' }} placeholder="0" />
                   </div>
                 </div>
               </div>
@@ -435,29 +518,27 @@ export default function Orders() {
                 <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#333' }}>Thanh toán</h4>
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Tổng tiền hàng</label>
-                    <input type="number" min="0" value={editingOrder.total_price || ''} readOnly />
+                    <label>Đơn giá</label>
+                    <input type="text" value={editingOrder.unit_price ? Number(editingOrder.unit_price).toLocaleString('vi-VN') : ''} onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '');
+                      const price = raw === '' ? 0 : parseFloat(raw);
+                      setEditingOrder({ ...editingOrder, unit_price: price, total_price: price * editingOrder.quantity });
+                    }} style={{ textAlign: 'right' }} placeholder="0" />
                   </div>
                   <div className="form-group">
-                    <label>Thuế VAT (%)</label>
-                    <input type="number" step="0.01" min="0" value={editingOrder.vat_rate || ''} onChange={(e) => setEditingOrder({ ...editingOrder, vat_rate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} />
+                    <label>Thành tiền</label>
+                    <input type="text" value={editingOrder.total_price ? Number(editingOrder.total_price).toLocaleString('vi-VN') : '0'} readOnly style={{ textAlign: 'right' }} />
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Phí vận chuyển</label>
-                    <input type="number" min="0" value={editingOrder.shipping_fee || ''} onChange={(e) => setEditingOrder({ ...editingOrder, shipping_fee: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} />
+                    <label>VAT (%)</label>
+                    <input type="number" step="0.01" min="0" value={editingOrder.vat_rate || ''} onChange={(e) => setEditingOrder({ ...editingOrder, vat_rate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} />
                   </div>
                   <div className="form-group">
-                    <label>Giảm giá</label>
-                    <input type="number" min="0" value={editingOrder.discount || ''} onChange={(e) => setEditingOrder({ ...editingOrder, discount: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} />
+                    <label>Tổng cộng</label>
+                    <input type="text" value={Number(editingOrder.total_price * (1 + (editingOrder.vat_rate || 0.08))).toLocaleString('vi-VN')} readOnly style={{ textAlign: 'right', color: '#dc2626', fontWeight: 'bold' }} />
                   </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#fff', borderRadius: '6px', border: '1px solid #ddd' }}>
-                  <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Tổng cộng</span>
-                  <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#dc2626' }}>
-                    {formatCurrency(editingOrder.total_price * (1 + (editingOrder.vat_rate || 0.08)) + (editingOrder.shipping_fee || 0) - (editingOrder.discount || 0))}
-                  </span>
                 </div>
               </div>
 

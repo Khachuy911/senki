@@ -40,7 +40,7 @@
     "appId": "com.senki.bom-manager",
     "productName": "SENKI BOM Manager",
     "directories": {
-      "output": "release"
+      "output": "release2"
     },
     "win": {
       "target": "nsis",
@@ -48,7 +48,10 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SENKI BOM Manager"
     },
     "files": [
       "dist/**/*",

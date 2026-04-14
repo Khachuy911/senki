@@ -10,7 +10,7 @@ const { registerAuditHandlers } = require('./audit');
 const { registerMiscHandlers } = require('./misc');
 const { registerComponentHandlers } = require('./components');
 
-function registerAllHandlers(ipcMain, db) {
+function registerAllHandlers(ipcMain, db, app) {
   registerAuthHandlers(ipcMain, db);
   registerUserHandlers(ipcMain, db);
   registerProductHandlers(ipcMain, db);
@@ -20,7 +20,7 @@ function registerAllHandlers(ipcMain, db) {
   registerPurchasingHandlers(ipcMain, db);
   registerMrpHandlers(ipcMain, db);
   registerAuditHandlers(ipcMain, db);
-  registerMiscHandlers(ipcMain, db);
+  registerMiscHandlers(ipcMain, db, app);
   registerComponentHandlers(ipcMain, db);
 }
 

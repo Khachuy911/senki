@@ -33,7 +33,8 @@ export default function ProductionPlanning() {
   };
 
   const setQty = (productId, value) => {
-    const newQty = { ...quantities, [productId]: parseInt(value) || 0 };
+    const raw = parseInt(value) || 0;
+    const newQty = { ...quantities, [productId]: Math.max(0, raw) };
     setQuantities(newQty);
     setResults(null); // Clear old results when qty changes
   };
@@ -71,23 +72,49 @@ export default function ProductionPlanning() {
     }
     const res = await window.api.createPurchases(shortages);
     if (res.success) {
-      // Update pending orders to processing for products with plan quantity > 0
-      const planProductIds = Object.entries(quantities)
-        .filter(([_, qty]) => qty > 0)
-        .map(([id]) => parseInt(id));
-
-      for (const order of pendingOrders) {
-        if (planProductIds.includes(order.product_id)) {
-          await window.api.updateOrder(order.id, { ...order, status: 'processing' });
-        }
-      }
-
-      alert(`Đã tạo yêu cầu mua hàng ${res.request_code || ''} cho ${shortages.length} mã linh kiện bị thiếu! Các đơn hàng liên quan đã chuyển sang "Đang sản xuất".`);
-      // Reload to refresh data
+      await updateOrdersToProcessing();
+      alert(`Đã tạo yêu cầu mua hàng ${res.request_code || ''} cho ${shortages.length} mã linh kiện bị thiếu!`);
       loadProducts();
       setResults(null);
     } else {
       alert(res.message || 'Lỗi tạo yêu cầu mua hàng');
+    }
+  };
+
+  const proceedToProduction = async () => {
+    if (!results) return;
+    const shortages = results.filter(r => r.shortage > 0);
+    if (shortages.length > 0) {
+      alert('Còn linh kiện thiếu, không thể tiến hành sản xuất!');
+      return;
+    }
+
+    // Deduct inventory for each component
+    for (const r of results) {
+      const key = r.component_code || r.component_name;
+      await window.api.adjustInventory({
+        component_code: key,
+        quantity_change: -r.total_required,
+        type: 'production_deduct',
+        note: `Trừ vật tư sản xuất - Kế hoạch tự động`
+      });
+    }
+
+    await updateOrdersToProcessing();
+    alert('Đã trừ vật tư trong kho và tiến hành sản xuất!');
+    loadProducts();
+    setResults(null);
+  };
+
+  const updateOrdersToProcessing = async () => {
+    const planProductIds = Object.entries(quantities)
+      .filter(([_, qty]) => qty > 0)
+      .map(([id]) => parseInt(id));
+
+    for (const order of pendingOrders) {
+      if (planProductIds.includes(order.product_id)) {
+        await window.api.updateOrder(order.id, { ...order, status: 'processing' });
+      }
     }
   };
 
@@ -124,7 +151,6 @@ export default function ProductionPlanning() {
               <tr>
                 <th>Sản phẩm</th>
                 <th>Mã SP</th>
-                <th>Loại</th>
                 <th style={{ width: 120 }}>SL cần sản xuất</th>
               </tr>
             </thead>
@@ -133,7 +159,6 @@ export default function ProductionPlanning() {
                 <tr key={p.id} className={quantities[p.id] > 0 ? 'row-highlight' : ''}>
                   <td><strong>{p.name}</strong></td>
                   <td>{p.code || '—'}</td>
-                  <td>{p.category || '—'}</td>
                   <td>
                     <input
                       type="number"
@@ -147,7 +172,7 @@ export default function ProductionPlanning() {
                 </tr>
               ))}
               {products.length === 0 && (
-                <tr><td colSpan="4" className="empty-state">Chưa có sản phẩm nào. Hãy thêm sản phẩm trong trang BOM trước.</td></tr>
+                <tr><td colSpan="3" className="empty-state">Chưa có sản phẩm nào. Hãy thêm sản phẩm trong trang BOM trước.</td></tr>
               )}
             </tbody>
           </table>
@@ -163,12 +188,13 @@ export default function ProductionPlanning() {
               <span>
                 Thiếu: <strong style={{ color: '#dc2626' }}>{totalShortageItems} linh kiện</strong>
               </span>
-              <span>
-                Chi phí dự trù: <strong style={{ color: '#dc2626' }}>{formatCurrency(totalShortage)}</strong>
-              </span>
-              {totalShortageItems > 0 && (
-                <button className="btn-primary btn-sm" onClick={createPurchasingRequest} style={{ marginLeft: 16 }}>
+              {totalShortageItems > 0 ? (
+                <button className="btn-primary btn-sm" onClick={createPurchasingRequest}>
                   🛒 Tạo Yêu Cầu Mua Hàng
+                </button>
+              ) : (
+                <button className="btn-success btn-sm" onClick={proceedToProduction}>
+                  ✅ Tiến hành sản xuất
                 </button>
               )}
             </div>
@@ -177,15 +203,13 @@ export default function ProductionPlanning() {
             <table>
               <thead>
                 <tr>
-                  <th>STT</th>
-                  <th>Tên linh kiện</th>
-                  <th>Mã</th>
-                  <th>ĐVT</th>
-                  <th>Tổng cần</th>
-                  <th>Tồn kho</th>
-                  <th>Cần nhập thêm</th>
-                  <th>Đơn giá</th>
-                  <th>Chi phí dự trù</th>
+                  <th style={{ width: 40 }}>STT</th>
+                  <th style={{ width: 350 }}>Tên linh kiện</th>
+                  <th style={{ width: 150 }}>Mã</th>
+                  <th style={{ width: 80, textAlign: 'center' }}>ĐVT</th>
+                  <th style={{ width: 80, textAlign: 'center' }}>Tổng cần</th>
+                  <th style={{ width: 80, textAlign: 'center' }}>Tồn kho</th>
+                  <th style={{ width: 80, textAlign: 'center' }}>Cần nhập thêm</th>
                   <th>Chi tiết theo SP</th>
                 </tr>
               </thead>
@@ -195,32 +219,26 @@ export default function ProductionPlanning() {
                     <td>{i + 1}</td>
                     <td><strong>{r.component_name}</strong></td>
                     <td>{r.component_code || '—'}</td>
-                    <td>{r.unit}</td>
-                    <td><strong>{r.total_required}</strong></td>
-                    <td>{r.in_stock}</td>
-                    <td>
+                    <td style={{ textAlign: 'center' }}>{r.unit}</td>
+                    <td style={{ textAlign: 'center' }}><strong>{r.total_required}</strong></td>
+                    <td style={{ textAlign: 'center' }}>{r.in_stock}</td>
+                    <td style={{ textAlign: 'center' }}>
                       <span className={r.shortage > 0 ? 'badge badge-danger' : 'badge badge-success'}>
-                        {r.shortage > 0 ? `⚠ ${r.shortage}` : '✓ Đủ'}
+                        {r.shortage > 0 ? `${r.shortage}` : 'Đủ'}
                       </span>
                     </td>
-                    <td className="text-right">{formatCurrency(r.unit_price)}</td>
-                    <td className="text-right">
-                      {r.estimated_cost > 0 ? <strong style={{ color: '#dc2626' }}>{formatCurrency(r.estimated_cost)}</strong> : '—'}
-                    </td>
                     <td>
-                      <details>
-                        <summary style={{ cursor: 'pointer', color: '#2563eb', fontSize: 12 }}>Xem</summary>
-                        <div style={{ fontSize: 12, marginTop: 4 }}>
-                          {r.details.map((d, j) => (
-                            <div key={j}>{d.product_name}: {d.bom_qty} × {d.plan_qty} = <strong>{d.subtotal}</strong></div>
-                          ))}
+                      {r.details.map((d, j) => (
+                        <div key={j} style={{ fontSize: 12 }}>
+                          <span style={{ color: '#2563eb' }}>{d.product_name}</span>
+                          <span style={{ color: '#64748b' }}> ({d.product_code || '—'})</span>: {d.bom_qty} × {d.plan_qty} = <strong>{d.subtotal}</strong>
                         </div>
-                      </details>
+                      ))}
                     </td>
                   </tr>
                 ))}
                 {results.length === 0 && (
-                  <tr><td colSpan="10" className="empty-state">Các sản phẩm được chọn chưa có BOM</td></tr>
+                  <tr><td colSpan="8" className="empty-state">Các sản phẩm được chọn chưa có BOM</td></tr>
                 )}
               </tbody>
             </table>

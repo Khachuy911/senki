@@ -25,6 +25,11 @@ function registerBomHandlers(ipcMain, db) {
   });
 
   ipcMain.handle('bom:update', (_, id, data) => {
+    // Allow partial updates - only quantity field can be updated alone
+    if (data.quantity !== undefined) {
+      db.prepare('UPDATE bom_items SET quantity = ? WHERE id = ?').run(data.quantity, id);
+      return { success: true };
+    }
     if (!data.component_code || !data.component_code.trim()) {
       return { success: false, message: 'Mã linh kiện là bắt buộc' };
     }

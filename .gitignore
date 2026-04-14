@@ -16,3 +16,4 @@ release-manifest.json
 repomix-output.xml
 *.md
 .gitignore
+release2\*

@@ -5,8 +5,9 @@ function registerMrpHandlers(ipcMain, db) {
 
     for (const plan of planItems) {
       const bomItems = db.prepare('SELECT * FROM bom_items WHERE product_id = ?').all(plan.product_id);
-      const product = db.prepare('SELECT name FROM products WHERE id = ?').get(plan.product_id);
+      const product = db.prepare('SELECT name, code FROM products WHERE id = ?').get(plan.product_id);
       const productName = product ? product.name : `Product ${plan.product_id}`;
+      const productCode = product ? product.code : '';
 
       for (const bom of bomItems) {
         const key = bom.component_code || bom.component_name;
@@ -26,6 +27,7 @@ function registerMrpHandlers(ipcMain, db) {
         componentNeeds[key].details.push({
           product_id: plan.product_id,
           product_name: productName,
+          product_code: productCode,
           bom_qty: bom.quantity,
           plan_qty: plan.quantity,
           subtotal

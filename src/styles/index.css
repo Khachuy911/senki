@@ -244,11 +244,14 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+  position: relative;
+  z-index: 1;
 }
 
 .page {
   max-width: 100%;
   position: relative;
+  z-index: 1;
 }
 
 .page-header {
@@ -810,5 +813,23 @@ tbody tr:hover {
 
 .row-highlight:hover {
   background: #dbeafe !important;
+}
+
+/* ============ DEFENSIVE - ENSURE INPUTS WORK ============ */
+input, select, textarea, button {
+  pointer-events: auto;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="email"],
+input[type="search"],
+select,
+textarea {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 

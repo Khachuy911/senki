@@ -4,6 +4,7 @@ const { initDatabase } = require('./database');
 const { registerAllHandlers } = require('./handlers/index');
 
 let mainWindow;
+let db;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -35,8 +36,8 @@ function createWindow() {
 
 // APP LIFECYCLE
 app.whenReady().then(() => {
-  const db = initDatabase(app);
-  registerAllHandlers(ipcMain, db);
+  db = initDatabase(app);
+  registerAllHandlers(ipcMain, db, app);
   createWindow();
 });
 

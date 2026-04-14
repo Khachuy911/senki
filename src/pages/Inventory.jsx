@@ -220,8 +220,8 @@ export default function Inventory() {
                   <div style={{ fontSize: 12, color: '#64748b' }}>Mã: {newItem.component_code} | Đơn vị: {newItem.unit}</div>
                 </div>
                 <div className="form-row">
-                  <div className="form-group"><label>Số lượng</label><input type="number" min="0" value={newItem.quantity} onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })} /></div>
-                  <div className="form-group"><label>Tồn tối thiểu</label><input type="number" min="0" value={newItem.min_stock} onChange={(e) => setNewItem({ ...newItem, min_stock: parseInt(e.target.value) })} /></div>
+                  <div className="form-group"><label>Số lượng</label><input type="number" min="0" defaultValue={newItem.quantity || ''} onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value === '' ? '' : parseInt(e.target.value) })} /></div>
+                  <div className="form-group"><label>Tồn tối thiểu</label><input type="number" min="0" defaultValue={newItem.min_stock || ''} onChange={(e) => setNewItem({ ...newItem, min_stock: e.target.value === '' ? '' : parseInt(e.target.value) })} /></div>
                 </div>
                 <div className="form-group"><label>Vị trí kho</label><input value={newItem.location} onChange={(e) => setNewItem({ ...newItem, location: e.target.value })} /></div>
                 <div className="modal-actions">
