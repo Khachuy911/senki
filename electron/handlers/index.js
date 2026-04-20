@@ -9,6 +9,7 @@ const { registerMrpHandlers } = require('./mrp');
 const { registerAuditHandlers } = require('./audit');
 const { registerMiscHandlers } = require('./misc');
 const { registerComponentHandlers } = require('./components');
+const { registerCcdcHandlers } = require('./ccdc');
 
 function registerAllHandlers(ipcMain, db, app) {
   registerAuthHandlers(ipcMain, db);
@@ -22,6 +23,7 @@ function registerAllHandlers(ipcMain, db, app) {
   registerAuditHandlers(ipcMain, db);
   registerMiscHandlers(ipcMain, db, app);
   registerComponentHandlers(ipcMain, db);
+  registerCcdcHandlers(ipcMain, db);
 }
 
 module.exports = { registerAllHandlers };

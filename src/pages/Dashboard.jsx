@@ -3,15 +3,22 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
+  const [caseOverview, setCaseOverview] = useState(null);
   const { user, canManageUsers } = useAuth();
 
   useEffect(() => {
     loadStats();
+    loadCaseOverview();
   }, []);
 
   const loadStats = async () => {
     const data = await window.api.getDashboardStats();
     setStats(data);
+  };
+
+  const loadCaseOverview = async () => {
+    const data = await window.api.getCaseOverview();
+    setCaseOverview(data);
   };
 
   const handleClearAllData = async () => {
@@ -23,6 +30,7 @@ export default function Dashboard() {
       if (result.success) {
         alert('Đã xóa toàn bộ dữ liệu thành công!');
         loadStats();
+        loadCaseOverview();
       } else {
         alert('Lỗi: ' + result.message);
       }
@@ -63,6 +71,66 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Case Overview Section */}
+      {caseOverview && caseOverview.byCase && caseOverview.byCase.length > 0 && (
+        <div className="panel" style={{ marginBottom: 24 }}>
+          <div className="panel-header">
+            <h3>📊 Tổng quan Case</h3>
+          </div>
+          <div style={{ padding: 16 }}>
+            {/* Stat Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+              <div style={{ background: '#f0f9ff', padding: 16, borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#0369a1' }}>{caseOverview.totalTypes}</div>
+                <div style={{ fontSize: 13, color: '#075985' }}>Tổng loại linh kiện</div>
+              </div>
+              <div style={{ background: '#f0fdf4', padding: 16, borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#15803d' }}>{caseOverview.purchased}</div>
+                <div style={{ fontSize: 13, color: '#166534' }}>Đã mua (đủ)</div>
+              </div>
+              <div style={{ background: '#fff7ed', padding: 16, borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#c2410c' }}>{caseOverview.pending}</div>
+                <div style={{ fontSize: 13, color: '#9a3412' }}>Chờ nhận hàng</div>
+              </div>
+              <div style={{ background: '#fef2f2', padding: 16, borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#dc2626' }}>{caseOverview.outOfStock}</div>
+                <div style={{ fontSize: 13, color: '#b91c1c' }}>Hết hàng</div>
+              </div>
+            </div>
+
+            {/* Cases Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Sản phẩm</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0' }}>Mã</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0' }}>Tổng SL</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0' }}>Tổng loại</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: '#15803d' }}>Đã mua</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: '#c2410c' }}>Chờ nhận</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: '#dc2626' }}>Hết hàng</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {caseOverview.byCase.map((c) => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 500 }}>{c.name}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center', color: '#64748b' }}>{c.code}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>{c.total_items}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>{c.total_types}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center', color: '#15803d', fontWeight: 600 }}>{c.purchased}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center', color: '#c2410c', fontWeight: 600 }}>{c.pending}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center', color: '#dc2626', fontWeight: 600 }}>{c.out_of_stock}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="stats-grid">

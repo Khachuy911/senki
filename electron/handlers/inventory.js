@@ -84,6 +84,35 @@ function registerInventoryHandlers(ipcMain, db) {
       GROUP BY component_code
     `).all();
   });
+
+  // Auto-deduct inventory when delivered quantity is entered
+  ipcMain.handle('inventory:deductOnDelivery', (_, data) => {
+    try {
+      const { component_code, quantity } = data;
+      if (!component_code || !quantity || quantity <= 0) {
+        return { success: false, message: 'Thông tin không hợp lệ' };
+      }
+      const current = db.prepare('SELECT * FROM inventory WHERE component_code = ?').get(component_code);
+      if (!current) {
+        return { success: false, message: 'Linh kiện không tồn tại trong kho' };
+      }
+      if (current.quantity < quantity) {
+        return { success: false, message: `Số lượng tồn kho không đủ (hiện tại: ${current.quantity})` };
+      }
+      // Use transaction for safety
+      const deduct = db.transaction(() => {
+        db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE component_code = ?')
+          .run(quantity, component_code);
+        db.prepare(
+          'INSERT INTO inventory_transactions (component_code, type, quantity, reference_type, note) VALUES (?, ?, ?, ?, ?)'
+        ).run(component_code, 'auto_deduct', quantity, 'delivery', 'Tự động trừ từ giao hàng');
+      });
+      deduct();
+      return { success: true, remaining: current.quantity - quantity };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  });
 }
 
 module.exports = { registerInventoryHandlers };

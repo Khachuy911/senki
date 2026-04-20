@@ -25,7 +25,15 @@ function registerBomHandlers(ipcMain, db) {
   });
 
   ipcMain.handle('bom:update', (_, id, data) => {
-    // Allow partial updates - only quantity field can be updated alone
+    // Handle partial updates - allow qty_ordered and delivered_quantity separately
+    if (data.qty_ordered !== undefined) {
+      db.prepare('UPDATE bom_items SET qty_ordered = ? WHERE id = ?').run(data.qty_ordered, id);
+      return { success: true };
+    }
+    if (data.delivered_quantity !== undefined) {
+      db.prepare('UPDATE bom_items SET delivered_quantity = ? WHERE id = ?').run(data.delivered_quantity, id);
+      return { success: true };
+    }
     if (data.quantity !== undefined) {
       db.prepare('UPDATE bom_items SET quantity = ? WHERE id = ?').run(data.quantity, id);
       return { success: true };

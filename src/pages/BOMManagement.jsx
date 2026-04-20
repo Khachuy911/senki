@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { AgGridReact } from 'ag-grid-react';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
 
 export default function BOMManagement({ defaultTab = 'products', hideTabs = false }) {
   const { user, canEdit, canDelete } = useAuth();
@@ -32,6 +35,232 @@ export default function BOMManagement({ defaultTab = 'products', hideTabs = fals
   });
   // BOM add modal - component search
   const [bomComponentSearch, setBomComponentSearch] = useState('');
+
+  // AG Grid: BOM Items
+  const bomGridRef = useRef(null);
+  const [bomGridApi, setBomGridApi] = useState(null);
+
+  // AG Grid column definitions for BOM items
+  const bomColumnDefs = useMemo(() => [
+    {
+      headerName: 'STT',
+      field: 'stt',
+      width: 60,
+      pinned: 'left',
+      valueGetter: (params) => params.node.rowIndex + 1,
+      editable: false,
+    },
+    {
+      headerName: 'Tên linh kiện',
+      field: 'component_name',
+      pinned: 'left',
+      minWidth: 200,
+      flex: 1,
+      editable: false,
+    },
+    {
+      headerName: 'Mã',
+      field: 'component_code',
+      width: 120,
+      editable: false,
+    },
+    {
+      headerName: 'SL',
+      field: 'quantity',
+      width: 80,
+      editable: canEdit(),
+      cellStyle: { textAlign: 'center' },
+      valueParser: (params) => parseInt(params.newValue) || 1,
+    },
+    {
+      headerName: 'Đơn vị',
+      field: 'unit',
+      width: 90,
+      editable: canEdit(),
+    },
+    {
+      headerName: 'SL đặt',
+      field: 'qty_ordered',
+      width: 80,
+      editable: canEdit(),
+      cellStyle: { textAlign: 'center' },
+      valueParser: (params) => parseInt(params.newValue) || 0,
+    },
+    {
+      headerName: 'Đã giao',
+      field: 'delivered_quantity',
+      width: 90,
+      editable: canEdit(),
+      cellStyle: (params) => {
+        const qtyOrd = params.data.qty_ordered || 0;
+        const qtyDel = params.value || 0;
+        if (qtyDel >= qtyOrd && qtyOrd > 0) return { textAlign: 'center', background: '#dcfce7', color: '#166534' };
+        if (qtyDel > 0) return { textAlign: 'center', background: '#fef9c3', color: '#854d0e' };
+        return { textAlign: 'center' };
+      },
+      valueParser: (params) => parseInt(params.newValue) || 0,
+    },
+    {
+      headerName: 'TT',
+      field: 'purchase_status',
+      width: 90,
+      pinned: 'right',
+      editable: false,
+      cellRenderer: (params) => {
+        const ordered = params.data.qty_ordered || 0;
+        const delivered = params.data.delivered_quantity || 0;
+        if (ordered === 0) {
+          return <span style={{ color: '#dc2626', fontWeight: 500 }}>Cần đặt</span>;
+        } else if (delivered >= ordered) {
+          return <span style={{ color: '#16a34a', fontWeight: 500 }}>Đủ</span>;
+        } else {
+          return <span style={{ color: '#ca8a04', fontWeight: 500 }}>Đã đặt</span>;
+        }
+      },
+    },
+    {
+      headerName: 'Vật liệu',
+      field: 'material',
+      width: 120,
+      editable: false,
+    },
+    {
+      headerName: 'Quy cách',
+      field: 'specification',
+      width: 120,
+      editable: false,
+    },
+    {
+      headerName: 'Màu',
+      field: 'color',
+      width: 80,
+      editable: false,
+    },
+    {
+      headerName: 'Đặc điểm',
+      field: 'identifying_features',
+      width: 100,
+      editable: false,
+      cellRenderer: (params) => {
+        if (params.value) {
+          return <img src={params.value} alt="Đặc điểm" style={{ width: 40, height: 40, objectFit: 'cover', cursor: 'pointer' }} onClick={() => window.open(params.value)} />;
+        }
+        return '-';
+      },
+    },
+    {
+      headerName: 'Đơn giá',
+      field: 'unit_price',
+      width: 100,
+      editable: false,
+      valueFormatter: (params) => params.value ? params.value.toLocaleString('vi-VN') : '0',
+    },
+    ...(canEdit() ? [{
+      headerName: 'Thao tác',
+      field: 'actions',
+      width: 90,
+      pinned: 'right',
+      editable: false,
+      cellRenderer: (params) => (
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            className="btn-icon btn-edit-icon"
+            onClick={() => openEditBom(params.data)}
+            title="Sửa"
+          >
+            ✎
+          </button>
+          {canDelete() && (
+            <button
+              className="btn-icon btn-danger-icon"
+              onClick={() => handleDeleteBom(params.data.id)}
+              title="Xóa"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ),
+    }] : []),
+  ], [canEdit, canDelete]);
+
+  // AG Grid default col def
+  const bomDefaultColDef = useMemo(() => ({
+    sortable: true,
+    filter: true,
+    resizable: true,
+  }), []);
+
+  const onBomGridReady = useCallback((params) => {
+    setBomGridApi(params.api);
+  }, []);
+
+  // Handle inline cell edit for quantity, qty_ordered, delivered_quantity
+  const onCellValueChanged = useCallback(async (params) => {
+    const { data: rowData, colDef, newValue, oldValue } = params;
+    if (!rowData?.id) return;
+    const oldItem = bomItems.find(b => b.id === rowData.id);
+    if (!oldItem) return;
+
+    if (colDef.field === 'quantity' && newValue !== oldItem.quantity) {
+      await window.api.updateBomItem(rowData.id, { quantity: newValue });
+      await window.api.logAudit({
+        user_id: user.id,
+        username: user.username,
+        action: 'UPDATE',
+        table_name: 'bom_items',
+        record_id: rowData.id,
+        old_values: JSON.stringify({ quantity: oldItem.quantity }),
+        new_values: JSON.stringify({ quantity: newValue }),
+      });
+      loadBom(selectedProduct.id);
+    }
+
+    if (colDef.field === 'qty_ordered' && newValue !== oldItem.qty_ordered) {
+      await window.api.updateBomItem(rowData.id, { qty_ordered: newValue });
+      await window.api.logAudit({
+        user_id: user.id,
+        username: user.username,
+        action: 'UPDATE',
+        table_name: 'bom_items',
+        record_id: rowData.id,
+        old_values: JSON.stringify({ qty_ordered: oldItem.qty_ordered }),
+        new_values: JSON.stringify({ qty_ordered: newValue }),
+      });
+      loadBom(selectedProduct.id);
+    }
+
+    if (colDef.field === 'delivered_quantity') {
+      const newDelivered = parseInt(newValue) || 0;
+      const oldDelivered = oldItem.delivered_quantity || 0;
+      const delta = newDelivered - oldDelivered;
+
+      if (delta > 0 && rowData.component_code) {
+        // Auto-deduct from inventory
+        const deductResult = await window.api.deductInventory({
+          component_code: rowData.component_code,
+          quantity: delta,
+        });
+        if (!deductResult.success) {
+          alert(`Lỗi tự động trừ kho: ${deductResult.message}`);
+          // Revert the value
+          loadBom(selectedProduct.id);
+          return;
+        }
+        await window.api.logAudit({
+          user_id: user.id,
+          username: user.username,
+          action: 'AUTO_DEDUCT',
+          table_name: 'bom_items',
+          record_id: rowData.id,
+          old_values: JSON.stringify({ delivered_quantity: oldDelivered }),
+          new_values: JSON.stringify({ delivered_quantity: newDelivered, deducted: delta }),
+        });
+      }
+      await window.api.updateBomItem(rowData.id, { delivered_quantity: newDelivered });
+      loadBom(selectedProduct.id);
+    }
+  }, [bomItems, selectedProduct, user]);
 
   useEffect(() => {
     setActiveTab(defaultTab);
@@ -366,47 +595,18 @@ export default function BOMManagement({ defaultTab = 'products', hideTabs = fals
               )}
             </div>
             {selectedProduct ? (
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>STT</th>
-                      <th>Tên linh kiện</th>
-                      <th>Mã</th>
-                      <th>SL</th>
-                      <th>Đơn vị</th>
-                      <th>Đặc điểm</th>
-                      {canEdit() && <th>Thao tác</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bomItems.map((item, i) => (
-                        <tr key={item.id}>
-                          <td>{i + 1}</td>
-                          <td>{item.component_name}</td>
-                          <td>{item.component_code}</td>
-                          <td>{item.quantity}</td>
-                          <td>{item.unit}</td>
-                          <td>
-                            {item.identifying_features ? (
-                              <img src={item.identifying_features} alt="Đặc điểm" style={{ width: 40, cursor: 'pointer' }} onClick={() => window.open(item.identifying_features)} />
-                            ) : '-'}
-                          </td>
-                          {canEdit() && (
-                            <td>
-                              <div style={{ display: 'flex', gap: 4 }}>
-                                <button className="btn-icon btn-edit-icon" onClick={() => openEditBom(item)} title="Sửa">✎</button>
-                                {canDelete() && <button className="btn-icon btn-danger-icon" onClick={() => handleDeleteBom(item.id)} title="Xóa">✕</button>}
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                    ))}
-                    {bomItems.length === 0 && (
-                      <tr><td colSpan={canEdit() ? 7 : 6} className="empty-state">Chưa có linh kiện nào</td></tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="ag-theme-alpine bom-grid-container" style={{ height: 400, width: '100%' }}>
+                <AgGridReact
+                  ref={bomGridRef}
+                  rowData={bomItems}
+                  columnDefs={bomColumnDefs}
+                  defaultColDef={bomDefaultColDef}
+                  onGridReady={onBomGridReady}
+                  onCellValueChanged={onCellValueChanged}
+                  animateRows={true}
+                  suppressMovable={false}
+                  getRowId={(params) => params.data.id}
+                />
               </div>
             ) : (
               <div className="empty-state-large">Chọn một sản phẩm ở danh sách trên để xem định mức vật tư (BOM)</div>

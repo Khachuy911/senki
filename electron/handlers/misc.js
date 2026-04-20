@@ -2,6 +2,70 @@ const XLSX = require('xlsx');
 const path = require('path');
 
 function registerMiscHandlers(ipcMain, db, app) {
+  // Case Overview - aggregated stats for BOM cases
+  ipcMain.handle('dashboard:caseOverview', () => {
+    try {
+      // Get total stats
+      const totalTypes = db.prepare(`
+        SELECT COUNT(DISTINCT component_code) as count FROM bom_items
+      `).get();
+
+      // Purchased: delivered_quantity >= quantity (fully delivered)
+      const purchased = db.prepare(`
+        SELECT COUNT(*) as count FROM bom_items
+        WHERE delivered_quantity >= quantity AND delivered_quantity > 0
+      `).get();
+
+      // Pending: delivered_quantity < quantity AND delivered_quantity > 0
+      const pending = db.prepare(`
+        SELECT COUNT(*) as count FROM bom_items
+        WHERE delivered_quantity < quantity AND delivered_quantity > 0
+      `).get();
+
+      // Out of stock: delivered_quantity = 0 AND exists in purchasing
+      const outOfStock = db.prepare(`
+        SELECT COUNT(DISTINCT bi.id) as count FROM bom_items bi
+        WHERE bi.delivered_quantity = 0
+        AND EXISTS (SELECT 1 FROM purchasing p WHERE p.component_code = bi.component_code)
+      `).get();
+
+      // By case breakdown
+      const byCase = db.prepare(`
+        SELECT
+          p.id, p.name, p.code,
+          COUNT(DISTINCT bi.id) as total_items,
+          COUNT(DISTINCT bi.component_code) as total_types,
+          SUM(CASE WHEN bi.delivered_quantity >= bi.quantity THEN 1 ELSE 0 END) as purchased,
+          SUM(CASE WHEN bi.delivered_quantity < bi.quantity AND bi.delivered_quantity > 0 THEN 1 ELSE 0 END) as pending,
+          SUM(CASE WHEN bi.delivered_quantity = 0 AND EXISTS(
+            SELECT 1 FROM purchasing pc
+            WHERE pc.component_code = bi.component_code
+          ) THEN 1 ELSE 0 END) as out_of_stock
+        FROM products p
+        JOIN bom_items bi ON p.id = bi.product_id
+        GROUP BY p.id
+        ORDER BY p.name
+      `).all();
+
+      return {
+        totalTypes: totalTypes.count,
+        purchased: purchased.count,
+        pending: pending.count,
+        outOfStock: outOfStock.count,
+        byCase: byCase
+      };
+    } catch (e) {
+      console.error('Error in getCaseOverview:', e);
+      return {
+        totalTypes: 0,
+        purchased: 0,
+        pending: 0,
+        outOfStock: 0,
+        byCase: []
+      };
+    }
+  });
+
   // Dashboard
   ipcMain.handle('dashboard:stats', () => {
     const products = db.prepare('SELECT COUNT(*) as count FROM products').get();

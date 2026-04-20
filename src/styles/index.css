@@ -833,3 +833,32 @@ textarea {
   -webkit-user-select: text !important;
 }
 
+/* ============ AG GRID STYLES ============ */
+.bom-grid-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ag-theme-alpine {
+  --ag-header-background-color: #f1f5f9;
+  --ag-header-foreground-color: var(--text);
+  --ag-row-hover-color: #eff6ff;
+  --ag-selected-row-background-color: #dbeafe;
+  --ag-font-family: var(--font);
+  --ag-font-size: 13px;
+}
+
+.ag-theme-alpine .ag-header-cell-label {
+  font-weight: 600;
+}
+
+.ag-theme-alpine .ag-cell {
+  display: flex;
+  align-items: center;
+}
+
+.ag-theme-alpine .ag-cell-focus {
+  border-color: var(--primary) !important;
+}
+

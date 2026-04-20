@@ -35,6 +35,15 @@ contextBridge.exposeInMainWorld('api', {
   adjustInventory: (data) => ipcRenderer.invoke('inventory:adjust', data),
   autoStockInventory: (data) => ipcRenderer.invoke('inventory:autoStock', data),
   getPendingReservations: () => ipcRenderer.invoke('inventory:getPendingReservations'),
+  deductInventory: (data) => ipcRenderer.invoke('inventory:deductOnDelivery', data),
+
+  // CCDC Inventory
+  getCcdcInventory: () => ipcRenderer.invoke('ccdc:getAll'),
+  createCcdcItem: (data) => ipcRenderer.invoke('ccdc:create', data),
+  updateCcdcItem: (id, data) => ipcRenderer.invoke('ccdc:update', id, data),
+  deleteCcdcItem: (id) => ipcRenderer.invoke('ccdc:delete', id),
+  adjustCcdcInventory: (data) => ipcRenderer.invoke('ccdc:adjust', data),
+  autoDeductCcdcInventory: (data) => ipcRenderer.invoke('ccdc:autoDeduct', data),
 
   // Orders
   getOrders: () => ipcRenderer.invoke('orders:getAll'),
@@ -52,6 +61,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Dashboard
   getDashboardStats: () => ipcRenderer.invoke('dashboard:stats'),
+  getCaseOverview: () => ipcRenderer.invoke('dashboard:caseOverview'),
 
   // BOM Copy
   copyBomFromProduct: (sourceProductId, targetProductId) => ipcRenderer.invoke('bom:copyFromProduct', sourceProductId, targetProductId),

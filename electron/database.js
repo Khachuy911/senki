@@ -178,6 +178,20 @@ function initDatabase(app) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS ccdc_inventory (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ccdc_name TEXT NOT NULL,
+      ccdc_code TEXT UNIQUE,
+      quantity INTEGER DEFAULT 0,
+      unit TEXT DEFAULT 'pcs',
+      min_stock INTEGER DEFAULT 5,
+      location TEXT,
+      status TEXT DEFAULT 'good',
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Upgrade existing orders table
@@ -204,6 +218,8 @@ function initDatabase(app) {
   try { db.exec("ALTER TABLE bom_items ADD COLUMN payment_status TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE bom_items ADD COLUMN order_date TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE bom_items ADD COLUMN needed_date TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN qty_ordered INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE bom_items ADD COLUMN delivered_quantity INTEGER DEFAULT 0"); } catch (e) {}
   try { db.exec("ALTER TABLE purchasing ADD COLUMN stocked INTEGER DEFAULT 0"); } catch (e) {}
 
   // Create default admin if not exists
