@@ -1,43 +1,139 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import OrderCell from '../components/OrderCell';
+
+const statusLabel = {
+  pending: 'Chờ xử lý',
+  processing: 'Đang sản xuất',
+  completed: 'Hoàn thành',
+  cancelled: 'Đã hủy',
+};
+const statusClass = {
+  pending: 'badge-warning',
+  processing: 'badge-info',
+  completed: 'badge-success',
+  cancelled: 'badge-danger',
+};
+
+const statusOptions = [
+  { value: 'pending', label: 'Chờ xử lý' },
+  { value: 'processing', label: 'Đang sản xuất' },
+  { value: 'completed', label: 'Hoàn thành' },
+  { value: 'cancelled', label: 'Đã hủy' },
+];
 
 export default function Orders() {
   const { user, canEdit, canDelete } = useAuth();
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [importData, setImportData] = useState([]);
   const [sortField, setSortField] = useState('order_date');
   const [sortDir, setSortDir] = useState('desc');
+
+  // New order inline row state
+  const [newRowMode, setNewRowMode] = useState(false);
   const [newOrder, setNewOrder] = useState({
-    order_code: '', customer_name: '', product_id: '', _product_search: '', _show_product_list: false, quantity: 1, unit_price: 0, total_price: 0, delivered_quantity: 0, vat_rate: 0.08, status: 'pending', order_date: '', delivery_date: '', payment_deadline: '', assigned_to: '', note: '',
-    shipping_fee: 0, discount: 0
+    order_code: '',
+    customer_name: '',
+    product_id: '',
+    quantity: 1,
+    unit_price: 0,
+    total_price: 0,
+    delivered_quantity: 0,
+    vat_rate: 0.08,
+    status: 'pending',
+    order_date: '',
+    delivery_date: '',
+    payment_deadline: '',
+    assigned_to: '',
+    note: '',
+    shipping_fee: 0,
+    discount: 0,
+    customer_phone: '',
+    customer_email: '',
+    customer_address: '',
   });
 
   const generateOrderCode = () => {
     const now = new Date();
-    const dateStr = now.getFullYear().toString() +
+    const dateStr =
+      now.getFullYear().toString() +
       String(now.getMonth() + 1).padStart(2, '0') +
       String(now.getDate()).padStart(2, '0');
     const random = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
     return `DH-${dateStr}-${random}`;
   };
 
-  const calculateTotal = (order) => {
-    const qty = order.quantity || 0;
-    const price = order.unit_price || 0;
-    return qty * price;
+  useEffect(() => {
+    loadOrders();
+    loadProducts();
+  }, []);
+
+  const loadOrders = async () => setOrders(await window.api.getOrders());
+  const loadProducts = async () => setProducts(await window.api.getProducts());
+
+  // ---- Sort ----
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
   };
 
-  useEffect(() => { loadOrders(); loadProducts(); }, []);
+  const sortIcon = (field) => {
+    if (sortField !== field) return ' ⇅';
+    return sortDir === 'asc' ? ' ↑' : ' ↓';
+  };
 
-  const loadOrders = async () => { setOrders(await window.api.getOrders()); };
-  const loadProducts = async () => { setProducts(await window.api.getProducts()); };
+  const sortedOrders = [...orders].sort((a, b) => {
+    let valA = a[sortField] || '';
+    let valB = b[sortField] || '';
+    if (
+      sortField === 'order_date' ||
+      sortField === 'delivery_date' ||
+      sortField === 'payment_deadline'
+    ) {
+      valA = valA ? new Date(valA).getTime() : 0;
+      valB = valB ? new Date(valB).getTime() : 0;
+    }
+    if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+    if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
 
-  const handleAdd = async (e) => {
-    e.preventDefault();
+  // ---- Cell save handler ----
+  const handleCellSave = async (orderId, field, value) => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+    const updated = { ...order, [field]: value };
+    if (field === 'quantity' || field === 'unit_price') {
+      updated.total_price = (updated.quantity || 0) * (updated.unit_price || 0);
+    }
+    const result = await window.api.updateOrder(orderId, updated);
+    if (!result.success) throw new Error(result.message || 'Lỗi lưu');
+    await window.api.logAudit({
+      user_id: user.id,
+      username: user.username,
+      action: 'UPDATE',
+      table_name: 'orders',
+      record_id: orderId,
+      old_values: null,
+      new_values: JSON.stringify({ [field]: value }),
+    });
+    loadOrders();
+  };
+
+  // ---- Stepper save helper ----
+  const handleStepper = async (orderId, field, current, delta) => {
+    const next = Math.max(0, (current || 0) + delta);
+    await handleCellSave(orderId, field, next);
+  };
+
+  // ---- Add new order inline ----
+  const handleAddInline = async () => {
     if (!newOrder.quantity || newOrder.quantity < 1) {
       alert('Số lượng phải lớn hơn 0');
       return;
@@ -46,36 +142,73 @@ export default function Orders() {
       alert('Đơn giá phải lớn hơn 0');
       return;
     }
-    if (newOrder.vat_rate < 0) {
-      alert('VAT không được âm');
-      return;
-    }
-    const quantity = parseInt(newOrder.quantity) || 1;
-    const orderToSave = { ...newOrder, quantity };
-    const result = await window.api.createOrder(orderToSave);
+    const qty = parseInt(newOrder.quantity) || 1;
+    const toSave = { ...newOrder, quantity: qty };
+    const result = await window.api.createOrder(toSave);
     if (result.success) {
       await window.api.logAudit({
-        user_id: user.id, username: user.username,
-        action: 'CREATE', table_name: 'orders', record_id: result.id,
-        old_values: null, new_values: JSON.stringify(newOrder)
+        user_id: user.id,
+        username: user.username,
+        action: 'CREATE',
+        table_name: 'orders',
+        record_id: result.id,
+        old_values: null,
+        new_values: JSON.stringify(toSave),
       });
-      setNewOrder({ order_code: '', customer_name: '', product_id: '', _product_search: '', _show_product_list: false, quantity: 1, unit_price: 0, total_price: 0, delivered_quantity: 0, vat_rate: 0.08, status: 'pending', order_date: '', delivery_date: '', payment_deadline: '', assigned_to: '', note: '', shipping_fee: 0, discount: 0 });
-      setShowAdd(false);
+      setNewRowMode(false);
+      setNewOrder({
+        order_code: '',
+        customer_name: '',
+        product_id: '',
+        quantity: 1,
+        unit_price: 0,
+        total_price: 0,
+        delivered_quantity: 0,
+        vat_rate: 0.08,
+        status: 'pending',
+        order_date: '',
+        delivery_date: '',
+        payment_deadline: '',
+        assigned_to: '',
+        note: '',
+        shipping_fee: 0,
+        discount: 0,
+        customer_phone: '',
+        customer_email: '',
+        customer_address: '',
+      });
       loadOrders();
+    } else {
+      alert('Lỗi tạo đơn: ' + result.message);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Xác nhận xóa đơn hàng?')) return;
-    await window.api.deleteOrder(id);
-    await window.api.logAudit({
-      user_id: user.id, username: user.username,
-      action: 'DELETE', table_name: 'orders', record_id: id,
-      old_values: null, new_values: null
+  const handleCancelAddInline = () => {
+    setNewRowMode(false);
+    setNewOrder({
+      order_code: '',
+      customer_name: '',
+      product_id: '',
+      quantity: 1,
+      unit_price: 0,
+      total_price: 0,
+      delivered_quantity: 0,
+      vat_rate: 0.08,
+      status: 'pending',
+      order_date: '',
+      delivery_date: '',
+      payment_deadline: '',
+      assigned_to: '',
+      note: '',
+      shipping_fee: 0,
+      discount: 0,
+      customer_phone: '',
+      customer_email: '',
+      customer_address: '',
     });
-    loadOrders();
   };
 
+  // ---- Import/Export ----
   const handleExport = async () => {
     const result = await window.api.exportOrders();
     if (result.canceled) return;
@@ -118,15 +251,16 @@ export default function Orders() {
 
       let productId = '';
       if (productName || productCode) {
-        const product = products.find(p =>
-          (productName && p.name === productName) ||
-          (productCode && p.code === productCode)
+        const product = products.find(
+          (p) =>
+            (productName && p.name === productName) ||
+            (productCode && p.code === productCode)
         );
         if (product) productId = product.id;
       }
 
       try {
-        const result = await window.api.createOrder({
+        const r = await window.api.createOrder({
           order_code: orderCode,
           customer_name: customerName,
           product_id: productId,
@@ -141,17 +275,23 @@ export default function Orders() {
           note,
           shipping_fee: 0,
           discount: 0,
-          delivered_quantity: 0
+          delivered_quantity: 0,
         });
-        if (result.success) {
+        if (r.success) {
           await window.api.logAudit({
-            user_id: user.id, username: user.username,
-            action: 'CREATE', table_name: 'orders', record_id: result.id,
-            old_values: null, new_values: JSON.stringify({ order_code: orderCode })
+            user_id: user.id,
+            username: user.username,
+            action: 'CREATE',
+            table_name: 'orders',
+            record_id: r.id,
+            old_values: null,
+            new_values: JSON.stringify({ order_code: orderCode }),
           });
           imported++;
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+      }
     }
     alert(`Đã import ${imported}/${importData.length} đơn hàng`);
     setShowImport(false);
@@ -159,58 +299,89 @@ export default function Orders() {
     loadOrders();
   };
 
-  const handleEdit = (order) => {
-    setEditingOrder({ ...order });
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    const result = await window.api.updateOrder(editingOrder.id, editingOrder);
-    if (!result.success) {
-      alert(result.message || 'Không thể cập nhật đơn hàng');
-      return;
-    }
+  // ---- Delete ----
+  const handleDelete = async (id) => {
+    if (!confirm('Xác nhận xóa đơn hàng?')) return;
+    await window.api.deleteOrder(id);
     await window.api.logAudit({
-      user_id: user.id, username: user.username,
-      action: 'UPDATE', table_name: 'orders', record_id: editingOrder.id,
-      old_values: null, new_values: JSON.stringify(editingOrder)
+      user_id: user.id,
+      username: user.username,
+      action: 'DELETE',
+      table_name: 'orders',
+      record_id: id,
+      old_values: null,
+      new_values: null,
     });
-    setEditingOrder(null);
     loadOrders();
   };
 
-  const statusLabel = { pending: 'Chờ xử lý', processing: 'Đang sản xuất', completed: 'Hoàn thành', cancelled: 'Đã hủy' };
-  const statusClass = { pending: 'badge-warning', processing: 'badge-info', completed: 'badge-success', cancelled: 'badge-danger' };
-  const formatCurrency = (num) => Number(num || 0).toLocaleString('vi-VN') + ' ₫';
-
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDir('asc');
-    }
+  // ---- Toolbar Add button ----
+  const handleToolbarAdd = () => {
+    const today = new Date().toISOString().split('T')[0];
+    setNewOrder({
+      ...newOrder,
+      order_code: generateOrderCode(),
+      order_date: today,
+    });
+    setNewRowMode(true);
   };
 
-  const sortedOrders = [...orders].sort((a, b) => {
-    let valA = a[sortField] || '';
-    let valB = b[sortField] || '';
-    if (sortField === 'order_date' || sortField === 'delivery_date' || sortField === 'payment_deadline') {
-      valA = valA ? new Date(valA).getTime() : 0;
-      valB = valB ? new Date(valB).getTime() : 0;
-    }
-    if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-    if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-    return 0;
-  });
+  // ---- Formatters ----
+  const formatCurrency = (num) =>
+    Number(num || 0).toLocaleString('vi-VN') + ' ₫';
 
-  const sortIcon = (field) => {
-    if (sortField !== field) return ' ⇅';
-    return sortDir === 'asc' ? ' ↑' : ' ↓';
+  const fmtPct = (v) => `${((v || 0.08) * 100).toFixed(0)}%`;
+
+  const fmtGrandTotal = (o) => {
+    const sub = o.total_price || 0;
+    const vat = sub * (o.vat_rate || 0.08);
+    return formatCurrency(sub + vat + (o.shipping_fee || 0) - (o.discount || 0));
+  };
+
+  const grandTotalNew =
+    (newOrder.quantity || 0) * (newOrder.unit_price || 0) * (1 + (newOrder.vat_rate || 0.08));
+
+  // ---- Number cell (editable, no stepper) ----
+  const NumberCell = ({ value, orderId, field, onSave }) => (
+    <OrderCell
+      field={field}
+      value={value}
+      orderId={orderId}
+      onSave={onSave}
+      inputType="number"
+      inputProps={{ min: 0 }}
+    />
+  );
+
+  // ---- Product cell with select ----
+  const ProductCell = ({ orderId, value, products, onSave }) => {
+    const [mode, setMode] = useState('display');
+
+    return (
+      <OrderCell
+        field="product_id"
+        value={value}
+        orderId={orderId}
+        onSave={onSave}
+        inputType="select"
+        options={[{ value: '', label: '— Chọn sản phẩm —' }, ...products.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))]}
+        displayFormatter={(v) => {
+          const p = products.find((pr) => pr.id === v);
+          return p ? (
+            <span>
+              {p.name} <span style={{ color: '#888' }}>({p.code})</span>
+            </span>
+          ) : (
+            '—'
+          );
+        }}
+      />
+    );
   };
 
   return (
     <div className="page">
+      {/* ---- Page Header ---- */}
       <div className="page-header">
         <h1>Đơn hàng</h1>
         <div className="page-actions">
@@ -218,344 +389,294 @@ export default function Orders() {
             className="btn-secondary"
             title="Export Excel"
             onClick={handleExport}
-            style={{ marginRight: '8px', padding: '8px 16px', fontSize: '14px' }}
-          >📤 Export</button>
+            style={{ padding: '8px 16px', fontSize: '13px' }}
+          >
+            Export
+          </button>
           {canEdit() && (
             <>
               <button
                 className="btn-secondary"
                 title="Import Excel"
                 onClick={handleImport}
-                style={{ marginRight: '8px', padding: '8px 16px', fontSize: '14px' }}
-              >📥 Import</button>
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                Import
+              </button>
               <button
                 className="btn-primary"
                 title="Thêm đơn hàng mới"
-                onClick={() => {
-                  const today = new Date().toISOString().split('T')[0];
-                  setNewOrder({ ...newOrder, order_code: generateOrderCode(), order_date: today });
-                  setShowAdd(true);
-                }}
-                style={{ width: '36px', height: '36px', fontSize: '20px', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >+</button>
+                onClick={handleToolbarAdd}
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                + Thêm đơn hàng
+              </button>
             </>
           )}
         </div>
       </div>
 
+      {/* ---- Table ---- */}
       <div className="panel">
-        <div className="table-container">
+        <div className="order-table-container">
           <table>
             <thead>
               <tr>
-                <th>Mã ĐH</th>
-                <th>Khách hàng</th>
-                <th>Sản phẩm</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => handleSort('order_date')}>Ngày đặt{sortIcon('order_date')}</th>
-                <th>SL</th>
-                <th>Đơn giá</th>
-                <th>Thành tiền</th>
-                <th>VAT</th>
-                <th>Tổng cộng</th>
-                <th>Đã giao</th>
-                <th>Còn lại</th>
-                <th>Trạng thái</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => handleSort('product_name')}>Sản phẩm{sortIcon('product_name')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => handleSort('customer_name')}>Khách hàng{sortIcon('customer_name')}</th>
+                <th style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => handleSort('quantity')}>SL{sortIcon('quantity')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => handleSort('unit_price')}>Đơn giá{sortIcon('unit_price')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => handleSort('total_price')}>Thành tiền{sortIcon('total_price')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => handleSort('vat_rate')}>VAT{sortIcon('vat_rate')}</th>
+                <th style={{ cursor: 'pointer' }}>Tổng cộng</th>
+                <th style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => handleSort('delivered_quantity')}>Đã giao{sortIcon('delivered_quantity')}</th>
+                <th style={{ cursor: 'pointer', textAlign: 'center' }}>Còn lại</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => handleSort('status')}>Trạng thái{sortIcon('status')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => handleSort('delivery_date')}>Ngày giao{sortIcon('delivery_date')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => handleSort('payment_deadline')}>Ngày trả{sortIcon('payment_deadline')}</th>
-                {canEdit() && <th>Thao tác</th>}
+                <th style={{ cursor: 'pointer' }} onClick={() => handleSort('order_code')}>Mã ĐH{sortIcon('order_code')}</th>
+                {canEdit() && <th style={{ textAlign: 'center' }}>Thao tác</th>}
               </tr>
             </thead>
             <tbody>
-              {sortedOrders.map((o) => {
-                const subtotal = o.total_price || 0;
-                const vatRate = o.vat_rate || 0.08;
-                const vatAmount = subtotal * vatRate;
-                const shippingFee = o.shipping_fee || 0;
-                const discount = o.discount || 0;
-                const grandTotal = subtotal + vatAmount + shippingFee - discount;
-                return (
-                <tr key={o.id}>
-                  <td>{o.order_code}</td>
-                  <td>{o.customer_name}</td>
-                  <td>{o.product_name || '—'} {o.product_code ? `(${o.product_code})` : ''}</td>
-                  <td>{o.order_date ? o.order_date.split(' ')[0] : '—'}</td>
-                  <td style={{ background: '#f3f4f6', textAlign: 'center' }}><strong>{o.quantity}</strong></td>
-                  <td style={{ background: '#f3f4f6' }}>{formatCurrency(o.unit_price || 0)}</td>
-                  <td style={{ background: '#f3f4f6' }}>{formatCurrency(subtotal)}</td>
-                  <td style={{ background: '#f3f4f6' }}>{(vatRate * 100).toFixed(0)}% ({formatCurrency(vatAmount)})</td>
-                  <td style={{ background: '#f3f4f6', fontWeight: 'bold', color: '#dc2626' }}>{formatCurrency(grandTotal)}</td>
-                  <td style={{ color: '#16a34a' }}>{o.delivered_quantity || 0}</td>
-                  <td style={{ color: '#dc2626' }}>{Math.max(0, o.quantity - (o.delivered_quantity || 0))}</td>
-                  <td><span className={`badge ${statusClass[o.status] || ''}`}>{statusLabel[o.status] || o.status}</span></td>
-                  <td>{o.delivery_date || '—'}</td>
-                  <td>{o.payment_deadline ? o.payment_deadline.split(' ')[0] : '—'}</td>
+              {/* ---- New order row ---- */}
+              {newRowMode && (
+                <tr className="row-new-order">
+                  {/* Col1: Ngày đặt */}
+                  <td>
+                    <input
+                      type="date"
+                      value={newOrder.order_date}
+                      onChange={(e) =>
+                        setNewOrder({ ...newOrder, order_date: e.target.value })
+                      }
+                      style={{ fontSize: '12px', width: '100%' }}
+                    />
+                  </td>
+                  {/* Col2: Sản phẩm */}
+                  <td>
+                    <select
+                      value={newOrder.product_id}
+                      onChange={(e) =>
+                        setNewOrder({
+                          ...newOrder,
+                          product_id: e.target.value ? parseInt(e.target.value) : '',
+                        })
+                      }
+                      style={{ fontSize: '12px', width: '100%', border: '1px solid var(--primary)', borderRadius: '3px', padding: '3px 6px' }}
+                    >
+                      <option value="">—</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.code})
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  {/* Col3: Khách hàng */}
+                  <td>
+                    <input
+                      value={newOrder.customer_name}
+                      onChange={(e) =>
+                        setNewOrder({ ...newOrder, customer_name: e.target.value })
+                      }
+                      placeholder="Khách hàng"
+                      style={{ width: '100%', fontSize: '12px', border: '1px solid var(--primary)', borderRadius: '3px', padding: '3px 6px' }}
+                    />
+                  </td>
+                  {/* Col4: SL */}
+                  <td style={{ textAlign: 'center' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newOrder.quantity}
+                      onChange={(e) => {
+                        const qty = e.target.value === '' ? '' : parseInt(e.target.value) || 0;
+                        setNewOrder({
+                          ...newOrder,
+                          quantity: qty,
+                          total_price: qty * (newOrder.unit_price || 0),
+                        });
+                      }}
+                      style={{ width: '80px', textAlign: 'center', fontSize: '12px' }}
+                    />
+                  </td>
+                  {/* Col5: Đơn giá */}
+                  <td>
+                    <input
+                      type="text"
+                      value={newOrder.unit_price ? Number(newOrder.unit_price).toLocaleString('vi-VN') : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, '');
+                        const price = raw === '' ? 0 : parseFloat(raw);
+                        setNewOrder({
+                          ...newOrder,
+                          unit_price: price,
+                          total_price: price * (newOrder.quantity || 0),
+                        });
+                      }}
+                      style={{ width: '90px', textAlign: 'right', fontSize: '12px' }}
+                    />
+                  </td>
+                  {/* Col6: Thành tiền */}
+                  <td style={{ textAlign: 'right', background: '#f3f4f6' }}>
+                    {formatCurrency(newOrder.total_price)}
+                  </td>
+                  {/* Col7: VAT */}
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={newOrder.vat_rate}
+                      onChange={(e) =>
+                        setNewOrder({
+                          ...newOrder,
+                          vat_rate: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      style={{ width: '60px', fontSize: '12px' }}
+                    />
+                  </td>
+                  {/* Col8: Tổng cộng */}
+                  <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#dc2626', background: '#f3f4f6' }}>
+                    {formatCurrency(grandTotalNew)}
+                  </td>
+                  {/* Col9: Đã giao */}
+                  <td style={{ textAlign: 'center', background: '#f3f4f6' }}>0</td>
+                  {/* Col10: Còn lại */}
+                  <td style={{ textAlign: 'center', color: '#dc2626', fontWeight: 600, background: '#f3f4f6' }}>
+                    {newOrder.quantity || 0}
+                  </td>
+                  {/* Col11: Trạng thái */}
+                  <td>
+                    <select
+                      value={newOrder.status}
+                      onChange={(e) => setNewOrder({ ...newOrder, status: e.target.value })}
+                      style={{ fontSize: '12px' }}
+                    >
+                      <option value="pending">Chờ xử lý</option>
+                      <option value="processing">Đang sản xuất</option>
+                      <option value="completed">Hoàn thành</option>
+                      <option value="cancelled">Đã hủy</option>
+                    </select>
+                  </td>
+                  {/* Col12: Ngày giao */}
+                  <td>
+                    <input type="date" value={newOrder.delivery_date}
+                      onChange={(e) => setNewOrder({ ...newOrder, delivery_date: e.target.value })}
+                      style={{ fontSize: '12px' }} />
+                  </td>
+                  {/* Col13: Ngày trả */}
+                  <td>
+                    <input type="date" value={newOrder.payment_deadline}
+                      onChange={(e) => setNewOrder({ ...newOrder, payment_deadline: e.target.value })}
+                      style={{ fontSize: '12px' }} />
+                  </td>
+                  {/* Col14: Mã ĐH */}
+                  <td>
+                    <span style={{ fontSize: '12px', color: '#666' }}>
+                      {newOrder.order_code || 'Auto'}
+                    </span>
+                  </td>
                   {canEdit() && (
-                    <td>
-                      <button className="btn-icon" onClick={() => handleEdit(o)} style={{ marginRight: '4px' }}>✎</button>
-                      {canDelete() && <button className="btn-icon btn-danger-icon" onClick={() => handleDelete(o.id)}>✕</button>}
+                    <td style={{ textAlign: 'center' }}>
+                      <button className="btn-icon" onClick={handleAddInline} title="Lưu" style={{ color: 'var(--success)' }}>✓</button>
+                      <button className="btn-icon" onClick={handleCancelAddInline} title="Hủy" style={{ color: 'var(--danger)' }}>✕</button>
                     </td>
                   )}
                 </tr>
-              );
-              })}
-              {orders.length === 0 && <tr><td colSpan="15" className="empty-state">Chưa có đơn hàng</td></tr>}
+              )}
+
+              {/* ---- Order rows ---- */}
+              {sortedOrders.map((o) => (
+                <tr key={o.id}>
+                  {/* Col1: Ngày đặt */}
+                  <OrderCell field="order_date" value={o.order_date ? o.order_date.split(' ')[0] : ''} orderId={o.id} onSave={handleCellSave} inputType="date" />
+
+                  {/* Col2: Sản phẩm */}
+                  <ProductCell orderId={o.id} value={o.product_id} products={products} onSave={handleCellSave} />
+
+                  {/* Col3: Khách hàng */}
+                  <OrderCell field="customer_name" value={o.customer_name} orderId={o.id} onSave={handleCellSave} />
+
+                  {/* Col4: SL */}
+                  <NumberCell value={o.quantity} orderId={o.id} field="quantity" onSave={handleCellSave} />
+
+                  {/* Col5: Đơn giá */}
+                  <OrderCell field="unit_price" value={o.unit_price} orderId={o.id} onSave={handleCellSave} inputType="text" displayFormatter={(v) => formatCurrency(v)} />
+
+                  {/* Col6: Thành tiền */}
+                  <td style={{ background: '#f3f4f6', textAlign: 'right', fontWeight: 500 }}>
+                    {formatCurrency(o.total_price)}
+                  </td>
+
+                  {/* Col7: VAT */}
+                  <td style={{ background: '#f3f4f6' }}>
+                    {fmtPct(o.vat_rate)} ({formatCurrency((o.total_price || 0) * (o.vat_rate || 0.08))})
+                  </td>
+
+                  {/* Col8: Tổng cộng */}
+                  <td style={{ background: '#f3f4f6', fontWeight: 'bold', color: '#dc2626', textAlign: 'right' }}>
+                    {fmtGrandTotal(o)}
+                  </td>
+
+                  {/* Col9: Đã giao */}
+                  <NumberCell value={o.delivered_quantity} orderId={o.id} field="delivered_quantity" onSave={handleCellSave} />
+
+                  {/* Col10: Còn lại */}
+                  <td style={{ textAlign: 'center', color: '#dc2626', fontWeight: 600 }}>
+                    {Math.max(0, o.quantity - (o.delivered_quantity || 0))}
+                  </td>
+
+                  {/* Col11: Trạng thái */}
+                  <OrderCell field="status" value={o.status} orderId={o.id} onSave={handleCellSave} inputType="select" options={statusOptions}
+                    displayFormatter={(v) => (
+                      <span className={`badge ${statusClass[v] || ''}`}>{statusLabel[v] || v}</span>
+                    )}
+                  />
+
+                  {/* Col12: Ngày giao */}
+                  <OrderCell field="delivery_date" value={o.delivery_date || ''} orderId={o.id} onSave={handleCellSave} inputType="date" />
+
+                  {/* Col13: Ngày trả */}
+                  <OrderCell field="payment_deadline" value={o.payment_deadline || ''} orderId={o.id} onSave={handleCellSave} inputType="date" />
+
+                  {/* Col14: Mã ĐH */}
+                  <td style={{ fontWeight: 600 }}>{o.order_code}</td>
+
+                  {/* Col15: Thao tác */}
+                  {canEdit() && (
+                    <td style={{ textAlign: 'center' }}>
+                      {canDelete() && (
+                        <button className="btn-icon btn-danger-icon" onClick={() => handleDelete(o.id)} title="Xóa">✕</button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+
+              {orders.length === 0 && !newRowMode && (
+                <tr>
+                  <td colSpan={canEdit() ? 15 : 14} className="empty-state">
+                    Chưa có đơn hàng
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {showAdd && (
-        <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Tạo đơn hàng mới</h3>
-            <form onSubmit={handleAdd}>
-              <div className="form-row">
-                <div className="form-group"><label>Mã đơn hàng</label><input required value={newOrder.order_code} readOnly /></div>
-                <div className="form-group"><label>Khách hàng</label><input required value={newOrder.customer_name} onChange={(e) => setNewOrder({ ...newOrder, customer_name: e.target.value })} placeholder="Nhập tên khách hàng" /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Sản phẩm</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      autoComplete="off"
-                      value={newOrder._product_search || ''}
-                      onChange={(e) => {
-                        const search = e.target.value;
-                        const matched = products.find(p =>
-                          search === p.name || search === p.code ||
-                          p.name.toLowerCase().includes(search.toLowerCase()) ||
-                          (p.code && p.code.toLowerCase().includes(search.toLowerCase()))
-                        );
-                        setNewOrder({
-                          ...newOrder,
-                          _product_search: search,
-                          product_id: matched ? matched.id : ''
-                        });
-                      }}
-                      onFocus={() => setNewOrder({ ...newOrder, _show_product_list: true })}
-                      onBlur={() => setTimeout(() => setNewOrder({ ...newOrder, _show_product_list: false }), 200)}
-                      placeholder="Nhập tên hoặc mã SP..."
-                    />
-                    {newOrder._show_product_list && (
-                      <div style={{
-                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
-                        background: '#fff', border: '1px solid #ddd', borderRadius: '4px',
-                        maxHeight: '200px', overflow: 'auto', boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-                      }}>
-                        {products.filter(p =>
-                          !newOrder._product_search ||
-                          p.name.toLowerCase().includes(newOrder._product_search.toLowerCase()) ||
-                          (p.code && p.code.toLowerCase().includes(newOrder._product_search.toLowerCase()))
-                        ).map((p) => (
-                          <div
-                            key={p.id}
-                            onMouseDown={() => setNewOrder({
-                              ...newOrder,
-                              product_id: p.id,
-                              _product_search: `${p.name} (${p.code})`,
-                              _show_product_list: false
-                            })}
-                            style={{
-                              padding: '8px 12px', cursor: 'pointer',
-                              background: newOrder.product_id === p.id ? '#e8f5e9' : '#fff'
-                            }}
-                            onMouseOver={(e) => e.target.style.background = '#f3f4f6'}
-                            onMouseOut={(e) => e.target.style.background = newOrder.product_id === p.id ? '#e8f5e9' : '#fff'}
-                          >
-                            {p.name} <span style={{ color: '#888' }}>({p.code})</span>
-                          </div>
-                        ))}
-                        {products.filter(p =>
-                          !newOrder._product_search ||
-                          p.name.toLowerCase().includes(newOrder._product_search.toLowerCase()) ||
-                          (p.code && p.code.toLowerCase().includes(newOrder._product_search.toLowerCase()))
-                        ).length === 0 && (
-                          <div style={{ padding: '8px 12px', color: '#888' }}>Không có sản phẩm phù hợp</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {newOrder.product_id && (
-                    <small style={{ color: '#16a34a', marginTop: '4px', display: 'block' }}>
-                      Đã chọn: {products.find(p => p.id === newOrder.product_id)?.name} ({products.find(p => p.id === newOrder.product_id)?.code})
-                    </small>
-                  )}
-                </div>
-                <div className="form-group"><label>Tổng số lượng</label><input type="number" min="1" value={newOrder.quantity} onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '') {
-                      setNewOrder({ ...newOrder, quantity: '', total_price: 0 });
-                    } else {
-                      const qty = parseInt(val) || '';
-                      setNewOrder({ ...newOrder, quantity: qty, total_price: (qty || 0) * (newOrder.unit_price || 0) });
-                    }
-                  }} placeholder="0" /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>Đơn giá</label><input type="text" value={newOrder.unit_price ? Number(newOrder.unit_price).toLocaleString('vi-VN') : ''} onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, '');
-                    const price = raw === '' ? 0 : parseFloat(raw);
-                    setNewOrder({ ...newOrder, unit_price: price, total_price: price * (newOrder.quantity || 0) });
-                  }} style={{ textAlign: 'right' }} placeholder="0" /></div>
-                <div className="form-group"><label>Thành tiền</label><input type="text" value={newOrder.total_price ? Number(newOrder.total_price).toLocaleString('vi-VN') : '0'} readOnly style={{ textAlign: 'right' }} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>VAT (%)</label><input type="number" step="0.01" min="0" value={newOrder.vat_rate} onChange={(e) => setNewOrder({ ...newOrder, vat_rate: e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0) })} /></div>
-                <div className="form-group"><label>Tổng cộng</label><input type="text" value={Number(newOrder.total_price * (1 + newOrder.vat_rate)).toLocaleString('vi-VN')} readOnly style={{ textAlign: 'right', color: '#dc2626', fontWeight: 'bold' }} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Trạng thái</label>
-                  <select value={newOrder.status} onChange={(e) => setNewOrder({ ...newOrder, status: e.target.value })}>
-                    <option value="pending">Chờ xử lý</option>
-                    <option value="processing">Đang sản xuất</option>
-                    <option value="completed">Hoàn thành</option>
-                    <option value="cancelled">Đã hủy</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>Ngày đặt hàng</label><input type="date" value={newOrder.order_date} onChange={(e) => setNewOrder({ ...newOrder, order_date: e.target.value })} /></div>
-                <div className="form-group"><label>Ngày giao</label><input type="date" value={newOrder.delivery_date} onChange={(e) => setNewOrder({ ...newOrder, delivery_date: e.target.value })} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>Ngày phải trả</label><input type="date" value={newOrder.payment_deadline} onChange={(e) => setNewOrder({ ...newOrder, payment_deadline: e.target.value })} /></div>
-                <div className="form-group"><label>Phụ trách</label><input value={newOrder.assigned_to} onChange={(e) => setNewOrder({ ...newOrder, assigned_to: e.target.value })} /></div>
-              </div>
-              <div className="form-group"><label>Ghi chú</label><input value={newOrder.note} onChange={(e) => setNewOrder({ ...newOrder, note: e.target.value })} /></div>
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setShowAdd(false)}>Hủy</button>
-                <button type="submit" className="btn-primary">Lưu</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {editingOrder && (
-        <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
-            <div style={{ borderBottom: '1px solid #eee', paddingBottom: '12px', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ margin: 0 }}>Mã đơn hàng: {editingOrder.order_code}</h3>
-                  <span className={`badge ${statusClass[editingOrder.status] || ''}`} style={{ marginTop: '4px', display: 'inline-block' }}>{statusLabel[editingOrder.status] || editingOrder.status}</span>
-                </div>
-              </div>
-            </div>
-
-            <form onSubmit={handleUpdate}>
-              <div style={{ background: '#f8f9fa', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#333' }}>Thông tin khách hàng</h4>
-                <div className="form-group">
-                  <label>Tên khách hàng</label>
-                  <input value={editingOrder.customer_name || ''} onChange={(e) => setEditingOrder({ ...editingOrder, customer_name: e.target.value })} />
-                </div>
-              </div>
-
-              <div style={{ background: '#f8f9fa', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#333' }}>Thông tin giao hàng</h4>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Ngày giao hàng</label>
-                    <input type="date" value={editingOrder.delivery_date || ''} onChange={(e) => setEditingOrder({ ...editingOrder, delivery_date: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Ngày phải trả</label>
-                    <input type="date" value={editingOrder.payment_deadline || ''} onChange={(e) => setEditingOrder({ ...editingOrder, payment_deadline: e.target.value })} />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Ghi chú</label>
-                  <input value={editingOrder.note || ''} onChange={(e) => setEditingOrder({ ...editingOrder, note: e.target.value })} />
-                </div>
-              </div>
-
-              <div style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#333' }}>Chi tiết đơn hàng</h4>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Trạng thái</label>
-                    <select value={editingOrder.status || 'pending'} onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value })}>
-                      <option value="pending">Chờ xử lý</option>
-                      <option value="processing">Đang sản xuất</option>
-                      <option value="completed">Hoàn thành</option>
-                      {editingOrder.status !== 'completed' && <option value="cancelled">Đã hủy</option>}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Sản phẩm</label>
-                    <select value={editingOrder.product_id || ''} onChange={(e) => setEditingOrder({ ...editingOrder, product_id: e.target.value })}>
-                      <option value="">-- Chọn sản phẩm --</option>
-                      {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Số lượng</label>
-                    <input type="number" min="1" value={editingOrder.quantity} onChange={(e) => setEditingOrder({ ...editingOrder, quantity: parseInt(e.target.value) || 1, total_price: (parseInt(e.target.value) || 1) * editingOrder.unit_price })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Đã giao</label>
-                    <input type="number" min="0" max={editingOrder.quantity} value={editingOrder.delivered_quantity || 0} onChange={(e) => setEditingOrder({ ...editingOrder, delivered_quantity: parseInt(e.target.value) || 0 })} />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Đơn giá</label>
-                    <input type="text" value={editingOrder.unit_price ? Number(editingOrder.unit_price).toLocaleString('vi-VN') : ''} onChange={(e) => {
-                      const raw = e.target.value.replace(/[^0-9]/g, '');
-                      const price = raw === '' ? 0 : parseFloat(raw);
-                      setEditingOrder({ ...editingOrder, unit_price: price, total_price: price * editingOrder.quantity });
-                    }} style={{ textAlign: 'right' }} placeholder="0" />
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ background: '#f8f9fa', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#333' }}>Thanh toán</h4>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Đơn giá</label>
-                    <input type="text" value={editingOrder.unit_price ? Number(editingOrder.unit_price).toLocaleString('vi-VN') : ''} onChange={(e) => {
-                      const raw = e.target.value.replace(/[^0-9]/g, '');
-                      const price = raw === '' ? 0 : parseFloat(raw);
-                      setEditingOrder({ ...editingOrder, unit_price: price, total_price: price * editingOrder.quantity });
-                    }} style={{ textAlign: 'right' }} placeholder="0" />
-                  </div>
-                  <div className="form-group">
-                    <label>Thành tiền</label>
-                    <input type="text" value={editingOrder.total_price ? Number(editingOrder.total_price).toLocaleString('vi-VN') : '0'} readOnly style={{ textAlign: 'right' }} />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>VAT (%)</label>
-                    <input type="number" step="0.01" min="0" value={editingOrder.vat_rate || ''} onChange={(e) => setEditingOrder({ ...editingOrder, vat_rate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Tổng cộng</label>
-                    <input type="text" value={Number(editingOrder.total_price * (1 + (editingOrder.vat_rate || 0.08))).toLocaleString('vi-VN')} readOnly style={{ textAlign: 'right', color: '#dc2626', fontWeight: 'bold' }} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setEditingOrder(null)}>Hủy</button>
-                <button type="submit" className="btn-primary">Cập nhật đơn hàng</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
+      {/* ---- Import preview modal ---- */}
       {showImport && (
         <div className="modal-overlay">
-          <div class="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '80vh', overflow: 'auto' }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '80vh', overflow: 'auto' }}>
             <h3>Import đơn hàng từ Excel</h3>
-            <p style={{ color: '#666', marginBottom: '16px' }}>Tìm thấy {importData.length} dòng dữ liệu. Xác nhận import?</p>
+            <p style={{ color: '#666', marginBottom: '16px' }}>
+              Tìm thấy {importData.length} dòng dữ liệu. Xác nhận import?
+            </p>
             <div style={{ maxHeight: '400px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '8px', marginBottom: '16px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead style={{ background: '#f3f4f6', position: 'sticky', top: 0 }}>
@@ -575,13 +696,25 @@ export default function Orders() {
                     const price = parseFloat(row['Đơn giá'] || row['unit_price'] || 0);
                     return (
                       <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>{row['Mã đơn hàng'] || row['order_code'] || 'Auto'}</td>
-                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>{row['Khách hàng'] || row['customer_name'] || '-'}</td>
-                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>{row['Sản phẩm'] || row['product_name'] || '-'}</td>
+                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>
+                          {row['Mã đơn hàng'] || row['order_code'] || 'Auto'}
+                        </td>
+                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>
+                          {row['Khách hàng'] || row['customer_name'] || '-'}
+                        </td>
+                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>
+                          {row['Sản phẩm'] || row['product_name'] || '-'}
+                        </td>
                         <td style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'center' }}>{qty}</td>
-                        <td style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>{formatCurrency(price)}</td>
-                        <td style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>{formatCurrency(qty * price)}</td>
-                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>{row['Trạng thái'] || row['status'] || 'pending'}</td>
+                        <td style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>
+                          {formatCurrency(price)}
+                        </td>
+                        <td style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>
+                          {formatCurrency(qty * price)}
+                        </td>
+                        <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>
+                          {row['Trạng thái'] || row['status'] || 'pending'}
+                        </td>
                       </tr>
                     );
                   })}
@@ -590,7 +723,9 @@ export default function Orders() {
             </div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
-              <button className="btn-primary" onClick={handleImportConfirm}>Import {importData.length} đơn hàng</button>
+              <button className="btn-primary" onClick={handleImportConfirm}>
+                Import {importData.length} đơn hàng
+              </button>
             </div>
           </div>
         </div>
